@@ -27,6 +27,7 @@ use constant PILLAR_SIZE    => 2.5;
 use constant PILLAR_SPACING => 10;
 
 sub generate {
+    print "GENERATE CALLED\n";
     # $object is Slic3r::Print::Object
     my ($self, $object) = @_;
     
@@ -92,7 +93,7 @@ sub generate {
 
 sub contact_area {
     # $object is Slic3r::Print::Object
-    my ($self, $object) = @_;
+    my ($self, $object, $tilt) = @_;
     my $conf = $self->object_config;
     
     # if user specified a custom angle threshold, convert it to radians
@@ -304,6 +305,10 @@ sub contact_area {
                 }
 
                 next if !@$diff;
+                if ( defined $tilt ){
+                    print "Support, tilt $tilt\n";
+                    return (0,$layerm);
+                }
                 push @overhang, @$diff;  # NOTE: this is not the full overhang as it misses the outermost half of the perimeter width!
             
                 # Let's define the required contact area by using a max gap of half the upper 

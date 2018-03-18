@@ -202,6 +202,39 @@ sub infill {
     $self->_infill;
 }
 
+sub tilt {
+    #This function checks if the object needs support material at some point.
+    my $self = shift;
+
+    #Prerequisite
+    $self->slice;
+
+    #Making sure that no support layers has been applied 
+    if ($self->step_done(STEP_SUPPORTMATERIAL)){
+        $self->clear_support_layers;
+    }
+
+    #Create a special instance of support_material for the tilt
+    my $support_material = $self->_support_material(tilt => 1);
+    
+    #If a tilt is needed, $tilt should contain 0, check contact_area code for more details
+    my ($tilt, $layerm) = $support_material->contact_area($self, tilt => 1);
+
+    if (!$tilt) {
+        my $layer = $layerm->layer;
+        my $slice_z = $layer->slice_z;
+        my $print_z = $layer->print_z;
+        my $height = $layer->height;
+        print "Support needed for $layerm, $slice_z, $print_z, $height \n";
+        return $print_z;
+    }
+    else {
+        print "No support needed\n";
+        return 0;
+    }
+
+}
+
 sub generate_support_material {
     my $self = shift;
     
@@ -231,7 +264,7 @@ sub generate_support_material {
 }
 
 sub _support_material {
-    my ($self) = @_;
+    my ($self, $tilt) = @_;
     
     my $first_layer_flow = Slic3r::Flow->new_from_width(
         width               => ($self->print->config->first_layer_extrusion_width || $self->config->support_material_extrusion_width),
@@ -242,13 +275,25 @@ sub _support_material {
         bridge_flow_ratio   => 0,
     );
     
-    return Slic3r::Print::SupportMaterial->new(
-        print_config        => $self->print->config,
-        object_config       => $self->config,
-        first_layer_flow    => $first_layer_flow,
-        flow                => $self->support_material_flow,
-        interface_flow      => $self->support_material_flow(FLOW_ROLE_SUPPORT_MATERIAL_INTERFACE),
-    );
+    if ( ! defined $tilt ){
+        return Slic3r::Print::SupportMaterial->new(
+            print_config        => $self->print->config,
+            object_config       => $self->config,
+            first_layer_flow    => $first_layer_flow,
+            flow                => $self->support_material_flow,
+            interface_flow      => $self->support_material_flow(FLOW_ROLE_SUPPORT_MATERIAL_INTERFACE),
+        );
+    }
+    else {
+        return Slic3r::Print::SupportMaterial->new(
+            print_config        => $self->print->config,
+            object_config       => $self->config,
+            first_layer_flow    => $first_layer_flow,
+            flow                => $self->support_material_flow,
+            interface_flow      => $self->support_material_flow(FLOW_ROLE_SUPPORT_MATERIAL_INTERFACE),
+            tilt_enable         => $tilt,
+        );        
+    }
 }
 
 # Idempotence of this method is guaranteed by the fact that we don't remove things from

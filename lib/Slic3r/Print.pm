@@ -39,6 +39,21 @@ sub size {
     return $self->bounding_box->size;
 }
 
+sub tilt_process {
+    my ($self) = @_;
+    my @layer_height;
+    $_->infill for @{$self->objects};
+    push @layer_height, $self->_tilt_process($_) for @{$self->objects};
+    return @layer_height;
+}
+
+sub _tilt_process {
+    my ($self, $object) = @_;
+    my $tilt_height = $object->tilt;
+    print "HEIGHT $tilt_height\n";
+    return $tilt_height;
+}
+
 sub process {
     my ($self) = @_;
     

@@ -59,6 +59,8 @@ our $PROCESS_COMPLETED_EVENT : shared = Wx::NewEventType;
 use constant FILAMENT_CHOOSERS_SPACING => 0;
 use constant PROCESS_DELAY => 0.5 * 1000; # milliseconds
 
+our $TILT_GCODE = 0;
+
 sub new {
     my $class = shift;
     my ($parent) = @_;
@@ -222,6 +224,7 @@ sub new {
 
     # right pane buttons
     $self->{btn_export_gcode} = Wx::Button->new($self, -1, "Export G-code…", wxDefaultPosition, [-1, 30], wxBU_LEFT);
+    $self->{btn_export_tilt_gcode} = Wx::Button->new($self, -1, "Export tilt G-code…", wxDefaultPosition, [-1, 30], wxBU_LEFT);
     $self->{btn_print} = Wx::Button->new($self, -1, "Print…", wxDefaultPosition, [-1, 30], wxBU_LEFT);
     $self->{btn_send_gcode} = Wx::Button->new($self, -1, "Send to printer", wxDefaultPosition, [-1, 30], wxBU_LEFT);
     $self->{btn_export_stl} = Wx::Button->new($self, -1, "Export STL…", wxDefaultPosition, [-1, 30], wxBU_LEFT);
@@ -258,7 +261,12 @@ sub new {
     $self->selection_changed(0);
     $self->object_list_changed;
     EVT_BUTTON($self, $self->{btn_export_gcode}, sub {
+        $TILT_GCODE = 0;
         $self->export_gcode;
+    });
+    EVT_BUTTON($self, $self->{btn_export_tilt_gcode}, sub {
+       $TILT_GCODE = 1;
+       $self->export_gcode;
     });
     EVT_BUTTON($self, $self->{btn_print}, sub {
         $self->{print_file} = $self->export_gcode(Wx::StandardPaths::Get->GetTempDir());
@@ -529,6 +537,7 @@ sub new {
         $buttons_sizer->Add($self->{btn_print}, 0, wxALIGN_RIGHT, 0);
         $buttons_sizer->Add($self->{btn_send_gcode}, 0, wxALIGN_RIGHT, 0);
         $buttons_sizer->Add($self->{btn_export_gcode}, 0, wxALIGN_RIGHT, 0);
+        $buttons_sizer->Add($self->{btn_export_tilt_gcode}, 0, wxALIGN_RIGHT, 0);
         
         $self->{right_sizer} = my $right_sizer = Wx::BoxSizer->new(wxVERTICAL);
         $right_sizer->Add($presets, 0, wxEXPAND | wxTOP, 10) if defined $presets;
@@ -1867,6 +1876,31 @@ sub async_apply_config {
     $self->start_background_process;
 }
 
+sub tilt_process {
+    my $self = shift;
+    my @result = $self->{print}->tilt_process;
+    print "RESULT PLATER @result\n";
+    my $height = pop @result;
+    my $model_object = $self->{model}->objects->[0];
+
+    $model_object->rotate(deg2rad(-10), 'Y');
+    my $new_model_object = $model_object->cut('Z', $height);
+    my ($upper_object, $lower_object) = @{$new_model_object->objects};
+    my $lower_model_object = $lower_object->model_object;
+    my $upper_model_object = $upper_object->model_object;
+    $lower_model_object->rotate(deg2rad(10), 'Y');
+    $self->{print}->clear_objects;
+    $TILT_GCODE = 0;
+    $self->{config}->set('support_material', 0);
+    $self->{print}->clear_objects;
+    $self->{print}->add_model_object($lower_model_object);
+    $self->export_gcode("LOWER.gcode");
+    $self->{print}->clear_objects;
+    $self->{print}->add_model_object($upper_model_object);
+    $self->export_gcode("UPPER.gcode");
+
+}
+
 sub start_background_process {
     my ($self) = @_;
     
@@ -1901,7 +1935,12 @@ sub start_background_process {
     @_ = ();
     $self->{process_thread} = Slic3r::spawn_thread(sub {
         eval {
-            $self->{print}->process;
+            if ($TILT_GCODE){
+                $self->tilt_process;
+            }
+            else {
+                $self->{print}->process;
+            }
         };
         if ($@) {
             Slic3r::debugf "Background process error: $@\n";
@@ -2022,7 +2061,6 @@ sub export_gcode {
             $self->statusbar->SetStatusText("Export cancelled");
             $self->{export_gcode_output_file} = undef;
             $self->{send_gcode_file} = undef;
-            
             # this updates buttons status
             $self->object_list_changed;
         });
@@ -2709,6 +2747,7 @@ sub object_list_changed {
     
     if ($self->{export_gcode_output_file} || $self->{send_gcode_file}) {
         $self->{btn_export_gcode}->Disable;
+        $self->{btn_export_tilt_gcode}->Disable;
         $self->{btn_print}->Disable;
         $self->{btn_send_gcode}->Disable;
     }
