@@ -19,6 +19,8 @@ package Slic3r::GUI::Plater;
 use strict;
 use warnings;
 use utf8;
+use Devel::GDB::Breakpoint;
+use Data::Dumper;
 
 use File::Basename qw(basename dirname);
 use List::Util qw(sum first max none any);
@@ -60,6 +62,8 @@ use constant FILAMENT_CHOOSERS_SPACING => 0;
 use constant PROCESS_DELAY => 0.5 * 1000; # milliseconds
 
 our $TILT_GCODE = 0;
+our $TILT_CUT = 0;
+our %origin;
 
 sub new {
     my $class = shift;
@@ -265,8 +269,108 @@ sub new {
         $self->export_gcode;
     });
     EVT_BUTTON($self, $self->{btn_export_tilt_gcode}, sub {
-       $TILT_GCODE = 1;
-       $self->export_gcode;
+        $TILT_GCODE = 1;
+
+        # apply config and validate print
+        my $config = $self->config;
+        $config->set('support_material', 1);
+        eval {
+            # this will throw errors if config is not valid
+            $config->validate;
+            $self->{print}->apply_config($config);
+            $self->{print}->validate;
+            Slic3r::debugf "apply config ok\n";
+        };
+
+        my @result = $self->{print}->tilt_process;
+        print "RESULT PLATER @result\n";
+
+        my $height = pop @result;
+
+        $TILT_CUT = $height;
+        print "STATS BEFORE ROTATION\n";
+        my $model = $self->{model}->objects->[0];
+        my $bb_mod = $model->bounding_box;
+        my $var_offset = $model->instances->[0]->offset->arrayref;
+        my $offset_x = $var_offset->[0];
+        my $offset_y = $var_offset->[1];
+        print Dumper($offset_x);
+        print Dumper($offset_y);
+        print Dumper($bb_mod->x_min);
+        print Dumper($bb_mod->x_max);
+        print Dumper($bb_mod->y_min);
+        print Dumper($bb_mod->y_max);
+        print Dumper($bb_mod->z_min);
+        print Dumper($bb_mod->z_max);
+        $model->rotate(deg2rad(-10), Y);
+        print "STATS AFTER ROTATION\n";
+
+        my @vector = $self->rotate3D($offset_x, $offset_y, 0, 0, -10);
+        my $tr_x = shift @vector;
+        my $tr_y = shift @vector;
+        my $tr_z = shift @vector;
+        print Dumper($tr_x, $tr_y, $tr_z);
+        $origin{'x'} = $tr_x;
+        $origin{'y'} = $tr_y;
+        $origin{'z'} = $tr_z;
+        my $rotate_translation = Slic3r::Pointf3->new(0, 0, $tr_z);
+        my $rotate_offset = Slic3r::Pointf->new($tr_x, $tr_y);
+        $model->translate(@$rotate_translation);
+        $model->instances->[0]->set_offset($rotate_offset);
+        $bb_mod = $model->bounding_box;
+        $var_offset = $model->instances->[0]->offset->arrayref;
+        $offset_x = $var_offset->[0];
+        $offset_y = $var_offset->[1];
+        print Dumper($offset_x);
+        print Dumper($offset_y);
+        print Dumper($bb_mod->x_min);
+        print Dumper($bb_mod->x_max);
+        print Dumper($bb_mod->y_min);
+        print Dumper($bb_mod->y_max);
+        print Dumper($bb_mod->z_min);
+        print Dumper($bb_mod->z_max);
+
+
+
+        my $new_model = $model->cut(Z, $height + $bb_mod->z_min);
+
+        my ($upper_object, $lower_object) = @{$new_model->objects};
+
+        $self->{upper_object} = Slic3r::Model->new;
+        $self->{upper_object}->add_object($upper_object);
+        my $upper_obj = $self->{upper_object}->objects->[0];
+        $bb_mod = $upper_obj->bounding_box;
+        print "UPPER BOX\n";
+        $var_offset = $upper_obj->instances->[0]->offset->arrayref;
+        $offset_x = $var_offset->[0];
+        $offset_y = $var_offset->[1];
+        print Dumper($offset_x);
+        print Dumper($offset_y);
+        print Dumper($bb_mod->x_min);
+        print Dumper($bb_mod->x_max);
+        print Dumper($bb_mod->y_min);
+        print Dumper($bb_mod->y_max);
+        print Dumper($bb_mod->z_min);
+        print Dumper($bb_mod->z_max);
+        $self->{lower_object} = Slic3r::Model->new;
+        $self->{lower_object}->add_object($lower_object);
+        my $lower_obj = $self->{lower_object}->objects->[0];
+        $bb_mod = $lower_obj->bounding_box;
+        print "LOWER BOX\n";
+        $var_offset = $lower_obj->instances->[0]->offset->arrayref;
+        $offset_x = $var_offset->[0];
+        $offset_y = $var_offset->[1];
+        print Dumper($offset_x);
+        print Dumper($offset_y);
+        print Dumper($bb_mod->x_min);
+        print Dumper($bb_mod->x_max);
+        print Dumper($bb_mod->y_min);
+        print Dumper($bb_mod->y_max);
+        print Dumper($bb_mod->z_min);
+        print Dumper($bb_mod->z_max);
+
+        $self->{print}->clear_objects;
+        $self->tilt(1);
     });
     EVT_BUTTON($self, $self->{btn_print}, sub {
         $self->{print_file} = $self->export_gcode(Wx::StandardPaths::Get->GetTempDir());
@@ -787,7 +891,7 @@ sub select_preset_by_name {
 
 sub selected_presets {
     my ($self, $group) = @_;
-    
+
     my %presets = ();
     foreach my $group (qw(printer filament print)) {
         $presets{$group} = [];
@@ -1535,9 +1639,19 @@ sub rotate {
         # so we first apply any Z rotation
         $model_object->transform_by_instance($model_instance, 1);
         $model_object->rotate(deg2rad($angle), $axis);
-        
+        # my $pt_offset = Slic3r::Pointf3->new(20,20,20);
+        # $model_object->translate(@$pt_offset);
+        # $model_instance->set_offset($pt_offset);
+        # my $mo_origin = $model_object->origin_translation;
+        # my $mi_offset = $model_instance->offset;
+        # print Dumper($mo_origin->x, $mo_origin->y, $mo_origin->z, $mi_offset->x, $mi_offset->y);
+
         # realign object to Z = 0
         $model_object->center_around_origin;
+
+        # $mo_origin = $model_object->origin_translation;
+        # $mi_offset = $model_instance->offset;
+        # print Dumper($mo_origin->x, $mo_origin->y, $mo_origin->z, $mi_offset->x, $mi_offset->y);
         $self->make_thumbnail($obj_idx);
     }
 
@@ -1876,31 +1990,6 @@ sub async_apply_config {
     $self->start_background_process;
 }
 
-sub tilt_process {
-    my $self = shift;
-    my @result = $self->{print}->tilt_process;
-    print "RESULT PLATER @result\n";
-    my $height = pop @result;
-    my $model_object = $self->{model}->objects->[0];
-
-    $model_object->rotate(deg2rad(-10), 'Y');
-    my $new_model_object = $model_object->cut('Z', $height);
-    my ($upper_object, $lower_object) = @{$new_model_object->objects};
-    my $lower_model_object = $lower_object->model_object;
-    my $upper_model_object = $upper_object->model_object;
-    $lower_model_object->rotate(deg2rad(10), 'Y');
-    $self->{print}->clear_objects;
-    $TILT_GCODE = 0;
-    $self->{config}->set('support_material', 0);
-    $self->{print}->clear_objects;
-    $self->{print}->add_model_object($lower_model_object);
-    $self->export_gcode("LOWER.gcode");
-    $self->{print}->clear_objects;
-    $self->{print}->add_model_object($upper_model_object);
-    $self->export_gcode("UPPER.gcode");
-
-}
-
 sub start_background_process {
     my ($self) = @_;
     
@@ -1916,16 +2005,24 @@ sub start_background_process {
     # "Attempt to free unreferenced scalar" warning...
     local $SIG{__WARN__} = Slic3r::GUI::warning_catcher($self);
     
-    # don't start process thread if config is not valid
-    eval {
-        # this will throw errors if config is not valid
-        $self->config->validate;
-        $self->{print}->validate;
-    };
-    if ($@) {
-        $self->statusbar->SetStatusText($@);
-        return;
+    if (!$TILT_GCODE){
+
+        # don't start process thread if config is not valid
+        eval {
+            # this will throw errors if config is not valid
+            my $config = $self->config;
+            $config->validate;
+            $self->{print}->apply_config($config);
+            $self->{print}->validate;
+        };
+        if ($@) {
+            $self->statusbar->SetStatusText($@);
+            return;
+        }
     }
+
+           my $off_z = $self->{print}->config->get('z_offset');
+        print "offset z $off_z\n";
     
     if ($Slic3r::GUI::Settings->{_}{threads}) {
         $self->{print}->config->set('threads', $Slic3r::GUI::Settings->{_}{threads});
@@ -1935,12 +2032,7 @@ sub start_background_process {
     @_ = ();
     $self->{process_thread} = Slic3r::spawn_thread(sub {
         eval {
-            if ($TILT_GCODE){
-                $self->tilt_process;
-            }
-            else {
-                $self->{print}->process;
-            }
+            $self->{print}->process;
         };
         if ($@) {
             Slic3r::debugf "Background process error: $@\n";
@@ -2003,6 +2095,93 @@ sub resume_background_process {
     }
 }
 
+sub rotate3D {
+    my ($self, $x, $y, $z, $A, $B) = @_;
+
+    my $n_A = deg2rad($A);
+    my $n_B = deg2rad($B);
+    my $n_x = ($x * cos($n_B)) + ($z * sin($n_B));
+    my $n_y = ($x * sin($n_A) * sin($n_B)) + ($y * cos($n_A)) - ($z * sin($n_A) * cos($n_B));
+    my $n_z = - ($x * cos($n_A) * sin($n_B)) + ($y * sin($n_A)) + ($z * cos($n_A) * cos($n_B));
+    return ($n_x, $n_y, $n_z);
+}
+
+sub tilt {
+    my ($self, $op) = @_;
+
+    return if !@{$self->{objects}};
+
+    my $config = $self->config;
+    $config->set('support_material', 0);
+    eval {
+        # this will throw errors if config is not valid
+        $config->validate;
+        $self->{print}->apply_config($config);
+        $self->{print}->validate;
+    };
+
+
+    if ($op == 1) {
+        $TILT_GCODE = 1;
+        $self->{print}->clear_objects;
+        my $lower_object = $self->{lower_object}->objects->[0];
+
+
+        print Dumper($self->{print}->has_support_material);
+
+        $lower_object->rotate(deg2rad(10), Y);
+
+        print "ROTATION BACK\n";
+        my $var_offset = $lower_object->instances->[0]->offset->arrayref;
+        my $offset_x = $var_offset->[0];
+        my $offset_y = $var_offset->[1];
+        my $offset_z = $origin{'z'};
+        my @vector = $self->rotate3D($offset_x, $offset_y, $offset_z, 0, 10);
+        my $tr_x = shift @vector;
+        my $tr_y = shift @vector;
+        my $tr_z = shift @vector;
+        print Dumper($tr_x, $tr_y, $tr_z);
+        my $rotate_translation = Slic3r::Pointf3->new(0, 0, $tr_z);
+        my $rotate_offset = Slic3r::Pointf->new($tr_x, $tr_y);
+        $lower_object->translate(@$rotate_translation);
+        $lower_object->instances->[0]->set_offset($rotate_offset);
+
+        $self->{print}->add_model_object($lower_object);
+
+        $self->export_gcode("lower1.gcode");
+
+    }
+    elsif ($op == 2) {
+
+        my $upper_object = $self->{upper_object}->objects->[0];
+        my $upper_z_offset = $upper_object->bounding_box->z_min;
+        $self->{print}->clear_objects;
+        my $sconfig = $self->config;
+        $sconfig->set('support_material', 0);
+        print "$upper_z_offset\n";
+        $sconfig->set('z_offset', $upper_z_offset);
+        eval {
+            # this will throw errors if config is not valid
+            $sconfig->validate;
+            $self->{print}->apply_config($sconfig);
+            $self->{print}->validate;
+        };
+        
+        $TILT_GCODE = 1;
+        
+        
+        $self->{print}->add_model_object($upper_object);
+
+        $self->export_gcode("upper1.gcode");
+
+        $TILT_GCODE = 0;
+    }
+    else {
+        print "tilting process done ! \n";
+    }
+
+}
+
 sub export_gcode {
     my ($self, $output_file) = @_;
     
@@ -2022,15 +2201,19 @@ sub export_gcode {
     };
     Slic3r::GUI::catch_error($self) and return;
     
-    
-    # apply config and validate print
-    my $config = $self->config;
-    eval {
-        # this will throw errors if config is not valid
-        $config->validate;
-        $self->{print}->apply_config($config);
-        $self->{print}->validate;
-    };
+    if (!$TILT_GCODE){
+        print "nouvelle config !\n";
+        # apply config and validate print
+        my $config = $self->config;
+        eval {
+            # this will throw errors if config is not valid
+            $config->validate;
+            $self->{print}->apply_config($config);
+            $self->{print}->validate;
+        };
+    }
+        my $off_z = $self->{print}->config->get('z_offset');
+        print "offset z $off_z\n";
     if (!$Slic3r::have_threads) {
         Slic3r::GUI::catch_error($self) and return;
     }
@@ -2194,6 +2377,9 @@ sub on_export_completed {
     
     # this updates buttons status
     $self->object_list_changed;
+    if ($TILT_GCODE){
+        $self->tilt(2);
+    }
 }
 
 sub do_print {
@@ -2747,7 +2933,6 @@ sub object_list_changed {
     
     if ($self->{export_gcode_output_file} || $self->{send_gcode_file}) {
         $self->{btn_export_gcode}->Disable;
-        $self->{btn_export_tilt_gcode}->Disable;
         $self->{btn_print}->Disable;
         $self->{btn_send_gcode}->Disable;
     }

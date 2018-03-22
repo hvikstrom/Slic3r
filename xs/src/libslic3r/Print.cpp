@@ -9,6 +9,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 
+#include <iostream>
+
 namespace Slic3r {
 
 template <class StepClass>
@@ -417,7 +419,6 @@ Print::add_model_object(ModelObject* model_object, int idx)
 {
     DynamicPrintConfig object_config = model_object->config;  // clone
     object_config.normalize();
-
     // initialize print object and store it at the given position
     PrintObject* o;
     {
@@ -429,12 +430,14 @@ Print::add_model_object(ModelObject* model_object, int idx)
             // invalidate all of the dependent ones in Print
             (*old_it)->invalidate_all_steps();
             delete *old_it;
-            
             this->objects[idx] = o = new PrintObject(this, model_object, bb);
+            std::cout << o << idx << &o << std::endl;
         } else {
+
             o = new PrintObject(this, model_object, bb);
+
             objects.push_back(o);
-    
+
             // invalidate steps
             this->invalidate_step(psSkirt);
             this->invalidate_step(psBrim);
@@ -467,11 +470,9 @@ Print::add_model_object(ModelObject* model_object, int idx)
         // assign volume to region
         o->add_region_volume(region_id, volume_id);
     }
-
     // apply config to print object
     o->config.apply(this->default_object_config);
     o->config.apply(object_config, true);
-    
     // update placeholders
     {
         // get the first input file name

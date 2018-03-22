@@ -26,7 +26,7 @@ if ($cpp_guess->is_gcc)	{
 }
 
 # std=c++11 Enforce usage of C++11 (required now). Minimum compiler supported: gcc 4.9, clang 3.3, MSVC 14.0
-push @cflags, qw(-std=c++11);
+push @cflags, qw(-std=c++11 -g);
 
 my @ldflags = ();
 
