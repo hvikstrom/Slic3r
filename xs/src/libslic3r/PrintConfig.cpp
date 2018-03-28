@@ -1356,6 +1356,19 @@ PrintConfigDef::PrintConfigDef()
         def->default_value = opt;
     }
 
+    def = this->add("tilt_enable", coFloat);
+    def->label = "Level to enable tilting";
+    def->category = "Tilt";
+    def->tooltip = "Enable bed-tilting";
+    def->cli = "tilt-enable";
+    def->default_value = new ConfigOptionFloat(0);
+
+    def = this->add("tilt_levels", coPoint3);
+    def->label = "Tilt levels";
+    def->tooltip = "Levels of U,V,W to reach the desired angle";
+    def->cli = "tilt-levels";
+    def->default_value = new ConfigOptionPoint3(Pointf3(0,0,0));
+
     def = this->add("support_material", coBool);
     def->label = "Generate support material";
     def->category = "Support material";

@@ -298,6 +298,13 @@ GCode::change_layer(const Layer &layer)
         gcode += this->writer.update_progress(this->layer_index, this->layer_count);
     }
     
+    if (this->config.tilt_enable.value){
+        std::cout << "tilt enabled" << std::endl;
+        Pointf3 levels = this->config.tilt_levels.value;
+        gcode += this->writer.tilt(levels.x + layer.print_z, levels.y + layer.print_z, levels.z + layer.print_z);
+    }
+    else {
+    std::cout << "tilt not enabled" << std::endl;
     coordf_t z = layer.print_z + this->config.z_offset.value;  // in unscaled coordinates
     if (EXTRUDER_CONFIG(retract_layer_change) && this->writer.will_move_z(z)) {
         gcode += this->retract();
@@ -306,6 +313,7 @@ GCode::change_layer(const Layer &layer)
         std::ostringstream comment;
         comment << "move to next layer (" << this->layer_index << ")";
         gcode += this->writer.travel_to_z(z, comment.str());
+    }
     }
     
     // forget last wiping path as wiping after raising Z is pointless

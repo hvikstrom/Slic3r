@@ -465,6 +465,8 @@ class PrintConfig : public GCodeConfig
     ConfigOptionBools               wipe;
     ConfigOptionFloat               z_offset;
     ConfigOptionFloat               z_steps_per_mm;
+    ConfigOptionFloat               tilt_enable;
+    ConfigOptionPoint3              tilt_levels;
     
     PrintConfig(bool initialize = true) : GCodeConfig(false) {
         if (initialize)
@@ -527,6 +529,8 @@ class PrintConfig : public GCodeConfig
         OPT_PTR(wipe);
         OPT_PTR(z_offset);
         OPT_PTR(z_steps_per_mm);
+        OPT_PTR(tilt_enable);
+        OPT_PTR(tilt_levels);
         
         // look in parent class
         ConfigOption* opt;

@@ -50,7 +50,9 @@ public:
     std::string unretract();
     std::string lift();
     std::string unlift();
+    std::string tilt(double u, double v, double z);
     Pointf3 get_position() const { return this->_pos; }
+    Pointf3 get_level() const { return this->_level; }
 private:
     std::string _extrusion_axis;
     Extruder* _extruder;
@@ -58,6 +60,7 @@ private:
     unsigned int _last_fan_speed;
     double _lifted;
     Pointf3 _pos;
+    Pointf3 _level;
     
     std::string _travel_to_z(double z, const std::string &comment);
     std::string _retract(double length, double restart_extra, const std::string &comment, bool long_retract = false);

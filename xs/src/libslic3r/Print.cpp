@@ -243,7 +243,9 @@ Print::invalidate_state_by_config(const PrintConfigBase &config)
             || opt_key == "use_relative_e_distances"
             || opt_key == "vibration_limit"
             || opt_key == "wipe"
-            || opt_key == "z_offset") {
+            || opt_key == "z_offset"
+            || opt_key == "tilt_enable"
+            || opt_key == "tilt_levels") {
             // these options only affect G-code export, so nothing to invalidate
         } else if (opt_key == "first_layer_extrusion_width") {
             osteps.insert(posPerimeters);
@@ -431,9 +433,10 @@ Print::add_model_object(ModelObject* model_object, int idx)
             (*old_it)->invalidate_all_steps();
             delete *old_it;
             this->objects[idx] = o = new PrintObject(this, model_object, bb);
-            std::cout << o << idx << &o << std::endl;
         } else {
 
+            std::cout << "min " << bb.min << std::endl;
+            std::cout << "max " << bb.max << std::endl;
             o = new PrintObject(this, model_object, bb);
 
             objects.push_back(o);
