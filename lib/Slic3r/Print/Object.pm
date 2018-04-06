@@ -202,6 +202,58 @@ sub infill {
     $self->_infill;
 }
 
+# Find min and max for x and y for a polygon
+
+sub find_extreme_points_polygons {
+
+    my ($self, $polygon, $min_x, $max_x, $min_y, $max_y) = @_;
+
+    foreach my $point (0..scalar @{$polygon}-1){
+        $min_x = (defined $min_x) ? $min_x : unscale $polygon->[$point]->x;
+        $max_x = (defined $max_x) ? $max_x : unscale $polygon->[$point]->x;
+
+        $min_y = (defined $min_y) ? $min_y : unscale $polygon->[$point]->y;
+        $max_y = (defined $max_y) ? $max_y : unscale $polygon->[$point]->y;
+
+
+        $min_x = unscale $polygon->[$point]->x if ($min_x > unscale $polygon->[$point]->x);
+        $max_x = unscale $polygon->[$point]->x if ($max_x < unscale $polygon->[$point]->x);
+        $min_y = unscale $polygon->[$point]->y if ($min_y > unscale $polygon->[$point]->y);
+        $max_y = unscale $polygon->[$point]->y if ($max_y < unscale $polygon->[$point]->y);
+    }
+
+    return ($min_x, $max_x, $min_y, $max_y);
+}
+
+# Find min/max for x/y for a list of polygons
+
+sub find_extreme_points {
+    my ($self, $polygons) = @_;
+
+    print "FINDING EXTREME POINTS\n";
+
+    my $min_x;
+    my $max_x;
+    my $min_y;
+    my $max_y;
+
+    use Data::Dumper;
+    print Dumper($polygons);
+    use Check::ISA;
+
+    if (obj($polygons, "Slic3r::Polygon")){
+        ($min_x, $max_x, $min_y, $max_y) = $self->find_extreme_points_polygons($polygons);
+    }
+    else {
+        foreach my $poly (0..scalar @{$polygons}-1){
+            if (obj($polygons->[$poly], "Slic3r::Polygon")){
+                ($min_x, $max_x, $min_y, $max_y) = $self->find_extreme_points_polygons($polygons->[$poly], $min_x, $max_x, $min_y, $max_y);
+            }
+        }
+    }
+    return ($min_x, $max_x, $min_y, $max_y);
+}
+
 sub tilt {
     #This function checks if the object needs support material at some point.
     my $self = shift;
@@ -218,13 +270,45 @@ sub tilt {
     my $support_material = $self->_support_material(tilt => 1);
     
     #If a tilt is needed, $tilt should contain 0, check contact_area code for more details
-    my ($tilt, $layerm) = $support_material->contact_area($self, tilt => 1);
+    my ($tilt, $layerm, $diff, $contact, $overhang) = $support_material->contact_area($self, tilt => 1);
 
     if (!$tilt) {
         my $layer = $layerm->layer;
+        my $lower_layer = $layer->lower_layer;
         my $slice_z = $layer->slice_z;
         my $print_z = $layer->print_z;
         my $height = $layer->height;
+        my $fw = $layerm->flow(FLOW_ROLE_EXTERNAL_PERIMETER)->scaled_width;
+        my $conf = $self->config;
+        my $d = +$conf->get_abs_value_over('support_material_threshold', $fw);
+
+        my ($over_min_x, $over_max_x, $over_min_y, $over_max_y) = $self->find_extreme_points($overhang);
+
+        my ($min_x, $max_x, $min_y, $max_y) = $self->find_extreme_points($lower_layer->slices->polygons);
+
+        use Math::Trig;
+
+        if ($over_max_x > $max_x){
+            print "Need tilt x->z\n";
+            my $anglexz = acos($max_x/$over_max_x);
+            print "Angle : $anglexz radians\n";
+        }
+        if ($over_max_y > $max_y){
+            print "Need tilt y->z\n";
+            my $angleyz = acos($max_y/$over_max_y);
+            print "Angle : $angleyz radians\n";
+        }
+        if ($over_min_x < $min_x){
+            print "Need tilt z->x\n";
+            my $anglezx = acos($over_min_x/$min_x);
+            print "Angle : $anglezx radians\n";
+        }
+        if ($over_min_y < $min_y){
+            print "Need tilt z->y\n";
+            my $anglezy = acos($over_min_y/$min_y);
+            print "Angle : $anglezy radians\n";
+        }
+
         print "Support needed for $layerm, $slice_z, $print_z, $height \n";
         return $print_z;
     }

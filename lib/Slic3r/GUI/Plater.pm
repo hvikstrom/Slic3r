@@ -269,153 +269,7 @@ sub new {
         $self->export_gcode;
     });
     EVT_BUTTON($self, $self->{btn_export_tilt_gcode}, sub {
-        $TILT_GCODE = 1;
-
-        my $extruder_y = 40;
-        my $extruder_x = 16;
-
-        my $model_object = $self->{model}->objects->[0];
-        $model_object->scale_xyz(Slic3r::Pointf3->new(1.5,1.5,1.5));
-
-        my $model_offset = Slic3r::Pointf->new(680, 20);
-        $model_object->instances->[0]->set_offset($model_offset);
-
-        $self->{print}->clear_objects;
-        $self->{print}->add_model_object($model_object);
-
-        # apply config and validate print
-        my $config = $self->config;
-        $config->set('support_material', 1);
-        eval {
-            # this will throw errors if config is not valid
-            $config->validate;
-            $self->{print}->apply_config($config);
-            $self->{print}->validate;
-            Slic3r::debugf "apply config ok\n";
-        };
-
-        my @result = $self->{print}->tilt_process;
-        print "RESULT PLATER @result\n";
-
-        my $height = pop @result;
-
-        $TILT_CUT = $height;
-        print "STATS BEFORE ROTATION\n";
-        my $model = $self->{model}->objects->[0];
-        my $bb_mod = $model->bounding_box;
-        my $var_offset = $model->instances->[0]->offset->arrayref;
-        my $offset_x = $var_offset->[0];
-        my $offset_y = $var_offset->[1];
-        print Dumper($offset_x);
-        print Dumper($offset_y);
-        print Dumper($bb_mod->x_min);
-        print Dumper($bb_mod->x_max);
-        print Dumper($bb_mod->y_min);
-        print Dumper($bb_mod->y_max);
-        print Dumper($bb_mod->z_min);
-        print Dumper($bb_mod->z_max);
-        $model->rotate(deg2rad(-10), Y);
-        print "STATS AFTER ROTATION\n";
-
-        my @vector = $self->rotate3D($offset_x, $offset_y, 0, 0, -10);
-        my $tr_x = shift @vector;
-        my $tr_y = shift @vector;
-        my $tr_z = shift @vector;
-        print Dumper($tr_x, $tr_y, $tr_z);
-        $origin{'x'} = $tr_x;
-        $origin{'y'} = $tr_y;
-        $origin{'z'} = $tr_z;
-        my $rotate_translation = Slic3r::Pointf3->new(0, 0, $tr_z);
-        my $rotate_offset = Slic3r::Pointf->new($tr_x, $tr_y);
-        $model->translate(@$rotate_translation);
-        $model->instances->[0]->set_offset($rotate_offset);
-        $bb_mod = $model->bounding_box;
-        $var_offset = $model->instances->[0]->offset->arrayref;
-        $offset_x = $var_offset->[0];
-        $offset_y = $var_offset->[1];
-        print Dumper($offset_x);
-        print Dumper($offset_y);
-        print Dumper($bb_mod->x_min);
-        print Dumper($bb_mod->x_max);
-        print Dumper($bb_mod->y_min);
-        print Dumper($bb_mod->y_max);
-        print Dumper($bb_mod->z_min);
-        print Dumper($bb_mod->z_max);
-
-
-        $TILT_CUT = $height;
-        print Dumper($TILT_CUT);
-        print Dumper($TILT_CUT + $bb_mod->z_min);
-        my $new_model = $model->cut(Z, $TILT_CUT + $bb_mod->z_min);
-
-        my ($upper_object, $lower_object) = @{$new_model->objects};
-
-        $self->{upper_object} = Slic3r::Model->new;
-        $self->{upper_object}->add_object($upper_object);
-        my $upper_obj = $self->{upper_object}->objects->[0];
-        $bb_mod = $upper_obj->bounding_box;
-        print "UPPER BOX\n";
-        $var_offset = $upper_obj->instances->[0]->offset->arrayref;
-        $offset_x = $var_offset->[0];
-        $offset_y = $var_offset->[1];
-        print Dumper($offset_x);
-        print Dumper($offset_y);
-        print Dumper($bb_mod->x_min);
-        print Dumper($bb_mod->x_max);
-        print Dumper($bb_mod->y_min);
-        print Dumper($bb_mod->y_max);
-        print Dumper($bb_mod->z_min);
-        print Dumper($bb_mod->z_max);
-
-        $TILT_CUT = $bb_mod->z_min;
-
-        $self->{lower_object} = Slic3r::Model->new;
-        $self->{lower_object}->add_object($lower_object);
-        my $lower_obj = $self->{lower_object}->objects->[0];
-        $bb_mod = $lower_obj->bounding_box;
-        print "LOWER BOX\n";
-        $var_offset = $lower_obj->instances->[0]->offset->arrayref;
-        $offset_x = $var_offset->[0];
-        $offset_y = $var_offset->[1];
-        print Dumper($offset_x);
-        print Dumper($offset_y);
-        print Dumper($bb_mod->x_min);
-        print Dumper($bb_mod->x_max);
-        print Dumper($bb_mod->y_min);
-        print Dumper($bb_mod->y_max);
-        print Dumper($bb_mod->z_min);
-        print Dumper($bb_mod->z_max);
-
-
-        my $offset_z = $origin{'z'};
-        $rotate_translation = Slic3r::Pointf3->new(0, 0, -$offset_z);
-        $lower_obj->translate(@$rotate_translation);
-        $lower_obj->rotate(deg2rad(10), Y);
-
-        print "ROTATION BACK\n";
-        $var_offset = $lower_obj->instances->[0]->offset->arrayref;
-        $offset_x = $var_offset->[0];
-        $offset_y = $var_offset->[1];
-        @vector = $self->rotate3D($offset_x, $offset_y, $offset_z, 0, 10);
-        $tr_x = shift @vector;
-        $tr_y = shift @vector;
-        $tr_z = shift @vector;
-        print Dumper($tr_x, $tr_y, $tr_z);
-
-        $rotate_offset = Slic3r::Pointf->new($tr_x, $tr_y);
-        $lower_obj->instances->[0]->set_offset($rotate_offset);
-        $bb_mod = $lower_obj->bounding_box;
-        print Dumper($offset_x);
-        print Dumper($offset_y);
-        print Dumper($bb_mod->x_min);
-        print Dumper($bb_mod->x_max);
-        print Dumper($bb_mod->y_min);
-        print Dumper($bb_mod->y_max);
-        print Dumper($bb_mod->z_min);
-        print Dumper($bb_mod->z_max);
-
-        $self->{print}->clear_objects;
-        $self->tilt(1);
+        $self->export_tilt_gcode;
     });
     EVT_BUTTON($self, $self->{btn_print}, sub {
         $self->{print_file} = $self->export_gcode(Wx::StandardPaths::Get->GetTempDir());
@@ -2137,19 +1991,113 @@ sub resume_background_process {
     }
 }
 
-# sub tilt_file {
-#     my $upper_file = "upper1.gcode";
 
-#     my $out_file = "new_upper1.gcode";
+sub export_tilt_gcode {
+    my $self = shift;
+    $TILT_GCODE = 1;
 
-#     open my $fh_out, '>', $out_file or die "Can't open $out_file: $!";
-#     open my $fh_upper, '<', $upper_file or die "Can't open $upper_file: $!";
+    my $extruder_y = 40;
+    my $extruder_x = 16;
 
-#     while (<$fh_upper>)
-#     {
+    my $model_object = $self->{model}->objects->[0];
+    $model_object->scale_xyz(Slic3r::Pointf3->new(1.5,1.5,1.5));
 
-#     }
-# }
+    my $model_offset = Slic3r::Pointf->new(680, 20);
+    $model_object->instances->[0]->set_offset($model_offset);
+
+    $self->{print}->clear_objects;
+    $self->{print}->add_model_object($model_object);
+
+    # apply config and validate print
+    my $config = $self->config;
+    $config->set('support_material', 1);
+    eval {
+        # this will throw errors if config is not valid
+        $config->validate;
+        $self->{print}->apply_config($config);
+        $self->{print}->validate;
+        Slic3r::debugf "apply config ok\n";
+    };
+
+    my @result = $self->{print}->tilt_process;
+    print "RESULT PLATER @result\n";
+
+    my $height = pop @result;
+
+    $TILT_CUT = $height;
+    my $model = $self->{model}->objects->[0];
+    my $bb_mod = $model->bounding_box;
+    my $var_offset = $model->instances->[0]->offset->arrayref;
+    my $offset_x = $var_offset->[0];
+    my $offset_y = $var_offset->[1];
+
+    $model->rotate(deg2rad(-10), Y);
+
+    my @vector = $self->rotate3D($offset_x, $offset_y, 0, 0, -10);
+    my $tr_x = shift @vector;
+    my $tr_y = shift @vector;
+    my $tr_z = shift @vector;
+
+    $origin{'x'} = $tr_x;
+    $origin{'y'} = $tr_y;
+    $origin{'z'} = $tr_z;
+    my $rotate_translation = Slic3r::Pointf3->new(0, 0, $tr_z);
+    my $rotate_offset = Slic3r::Pointf->new($tr_x, $tr_y);
+    $model->translate(@$rotate_translation);
+    $model->instances->[0]->set_offset($rotate_offset);
+    $bb_mod = $model->bounding_box;
+    $var_offset = $model->instances->[0]->offset->arrayref;
+    $offset_x = $var_offset->[0];
+    $offset_y = $var_offset->[1];
+
+    $TILT_CUT = $height;
+
+    my $new_model = $model->cut(Z, $TILT_CUT + $bb_mod->z_min);
+
+    my ($upper_object, $lower_object) = @{$new_model->objects};
+
+    $self->{upper_object} = Slic3r::Model->new;
+    $self->{upper_object}->add_object($upper_object);
+    my $upper_obj = $self->{upper_object}->objects->[0];
+    $bb_mod = $upper_obj->bounding_box;
+
+    $var_offset = $upper_obj->instances->[0]->offset->arrayref;
+    $offset_x = $var_offset->[0];
+    $offset_y = $var_offset->[1];
+
+
+    $TILT_CUT = $bb_mod->z_min;
+
+    $self->{lower_object} = Slic3r::Model->new;
+    $self->{lower_object}->add_object($lower_object);
+    my $lower_obj = $self->{lower_object}->objects->[0];
+    $bb_mod = $lower_obj->bounding_box;
+
+    $var_offset = $lower_obj->instances->[0]->offset->arrayref;
+    $offset_x = $var_offset->[0];
+    $offset_y = $var_offset->[1];
+
+
+    my $offset_z = $origin{'z'};
+    $rotate_translation = Slic3r::Pointf3->new(0, 0, -$offset_z);
+    $lower_obj->translate(@$rotate_translation);
+    $lower_obj->rotate(deg2rad(10), Y);
+
+    $var_offset = $lower_obj->instances->[0]->offset->arrayref;
+    $offset_x = $var_offset->[0];
+    $offset_y = $var_offset->[1];
+    @vector = $self->rotate3D($offset_x, $offset_y, $offset_z, 0, 10);
+    $tr_x = shift @vector;
+    $tr_y = shift @vector;
+    $tr_z = shift @vector;
+       
+    $rotate_offset = Slic3r::Pointf->new($tr_x, $tr_y);
+    $lower_obj->instances->[0]->set_offset($rotate_offset);
+    $bb_mod = $lower_obj->bounding_box;
+
+    $self->{print}->clear_objects;
+    $self->tilt(1);
+}
 
 sub rotate3D {
     my ($self, $x, $y, $z, $A, $B) = @_;
@@ -2219,6 +2167,10 @@ sub tilt {
         my $v_level = pop @levels;
         my $uv_level = $u_level - $v_level;
         my $uz_level = $u_level - $z_level;
+        if ($uv_level < 0) {
+            my $uv_offset = ((- $uv_level) + 1) / sin(deg2rad(10));
+            print "change pos by $uv_offset\n";
+        }
         my $tilt_levels = Slic3r::Pointf3->new($u_level, $uv_level, $uz_level);
         print Dumper($u_level, $uv_level, $uz_level);
         $sconfig->set('tilt_levels', $tilt_levels);

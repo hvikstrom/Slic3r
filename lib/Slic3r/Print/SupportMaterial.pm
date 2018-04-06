@@ -6,7 +6,7 @@ use Moo;
 use List::Util qw(sum min max);
 use Slic3r::ExtrusionPath ':roles';
 use Slic3r::Flow ':roles';
-use Slic3r::Geometry qw(epsilon scale scaled_epsilon PI rad2deg deg2rad convex_hull);
+use Slic3r::Geometry qw(epsilon scale scaled_epsilon PI rad2deg deg2rad convex_hull unscale);
 use Slic3r::Geometry::Clipper qw(offset diff union union_ex intersection offset_ex offset2
     intersection_pl offset2_ex diff_pl diff_ex);
 use Slic3r::Surface ':types';
@@ -50,7 +50,7 @@ sub generate {
         [ sort keys %$top ],
         max(map $_->height, @{$object->layers})
     );
-    
+
     # If we wanted to apply some special logic to the first support layers lying on
     # object's top surfaces this is the place to detect them
     
@@ -73,7 +73,7 @@ sub generate {
     # Detect what part of base support layers are "reverse interfaces" because they
     # lie above object's top surfaces.
     $self->generate_bottom_interface_layers($support_z, $base, $top, $interface);
-    
+
     # Install support layers into object.
     for my $i (0 .. $#$support_z) {
         $object->add_support_layer(
@@ -183,7 +183,7 @@ sub contact_area {
                         [ map $_->p, @{$layerm->slices} ],
                         offset([ map @$_, @{$lower_layer->slices} ], +$d),
                     );
-                
+
                     # only enforce spacing from the object ($fw/2) if the threshold angle
                     # is not too high: in that case, $d will be very small (as we need to catch
                     # very short overhangs), and such contact area would be eaten by the
@@ -197,7 +197,7 @@ sub contact_area {
                         [ map $_->p, @{$layerm->slices} ],
                         offset([ map @$_, @{$lower_layer->slices} ], +$conf->get_abs_value_over('support_material_threshold', $fw)),
                     );
-                
+
                     # collapse very tiny spots
                     $diff = offset2($diff, -$fw/10, +$fw/10);
                 
@@ -305,10 +305,6 @@ sub contact_area {
                 }
 
                 next if !@$diff;
-                if ( defined $tilt ){
-                    print "Support, tilt $tilt\n";
-                    return (0,$layerm);
-                }
                 push @overhang, @$diff;  # NOTE: this is not the full overhang as it misses the outermost half of the perimeter width!
             
                 # Let's define the required contact area by using a max gap of half the upper 
@@ -330,6 +326,10 @@ sub contact_area {
                     }
                 }
                 push @contact, @$diff;
+                if ( defined $tilt ){
+                    print "Support, tilt $tilt\n";
+                    return (0,$layerm, $diff, @contact, @overhang);
+                }
             }
         }
         next if !@contact;
@@ -346,7 +346,7 @@ sub contact_area {
             
             # ignore this contact area if it's too low
             next if $contact_z < $conf->get_value('first_layer_height') - epsilon;
-            
+
             $contact{$contact_z}  = [ @contact ];
             $overhang{$contact_z} = [ @overhang ];
             
