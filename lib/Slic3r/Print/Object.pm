@@ -254,6 +254,15 @@ sub find_extreme_points {
     return ($min_x, $max_x, $min_y, $max_y);
 }
 
+sub rotate3D {
+    my ($self, $x, $y, $z, $n_A, $n_B) = @_;
+
+    my $n_x = ($x * cos($n_B)) + ($z * sin($n_B));
+    my $n_y = ($x * sin($n_A) * sin($n_B)) + ($y * cos($n_A)) - ($z * sin($n_A) * cos($n_B));
+    my $n_z = - ($x * cos($n_A) * sin($n_B)) + ($y * sin($n_A)) + ($z * cos($n_A) * cos($n_B));
+    return ($n_x, $n_y, $n_z);
+}
+
 sub tilt {
     #This function checks if the object needs support material at some point.
     my $self = shift;
@@ -277,40 +286,66 @@ sub tilt {
         my $lower_layer = $layer->lower_layer;
         my $slice_z = $layer->slice_z;
         my $print_z = $layer->print_z;
+        my $lower_print_z = $lower_layer->print_z;
         my $height = $layer->height;
         my $fw = $layerm->flow(FLOW_ROLE_EXTERNAL_PERIMETER)->scaled_width;
         my $conf = $self->config;
         my $d = +$conf->get_abs_value_over('support_material_threshold', $fw);
+        my @vector;
 
         my ($over_min_x, $over_max_x, $over_min_y, $over_max_y) = $self->find_extreme_points($overhang);
 
         my ($min_x, $max_x, $min_y, $max_y) = $self->find_extreme_points($lower_layer->slices->polygons);
 
+        if ($min_x < 0 or $max_x < 0 or $min_y < 0 or $max_y < 0 or $over_min_x < 0 or $over_max_x < 0 or $over_min_y < 0 or $over_max_y < 0){
+            print "WARNING NEGATIVE VALUE\n";
+            return;
+        }
+
         use Math::Trig;
+        my $anglexz;
+        my $angleyz;
+        my $anglezx;
+        my $anglezy;
 
         if ($over_max_x > $max_x){
             print "Need tilt x->z\n";
-            my $anglexz = acos($max_x/$over_max_x);
+            $anglexz = acos($max_x/$over_max_x);
             print "Angle : $anglexz radians\n";
+            @vector = $self->rotate3D($max_x, 0, $lower_print_z, 0, -$anglexz);
+            $print_z = pop @vector;
         }
         if ($over_max_y > $max_y){
             print "Need tilt y->z\n";
-            my $angleyz = acos($max_y/$over_max_y);
+            $angleyz = acos($max_y/$over_max_y);
             print "Angle : $angleyz radians\n";
+            @vector = $self->rotate3D(0, $max_y, $lower_print_z, $angleyz, 0);
+            $print_z = pop @vector;
         }
         if ($over_min_x < $min_x){
             print "Need tilt z->x\n";
-            my $anglezx = acos($over_min_x/$min_x);
+            $anglezx = acos($over_min_x/$min_x);
             print "Angle : $anglezx radians\n";
+            @vector = $self->rotate3D($min_x, 0, $lower_print_z, 0, $anglezx);
+            $print_z = pop @vector;
         }
         if ($over_min_y < $min_y){
             print "Need tilt z->y\n";
-            my $anglezy = acos($over_min_y/$min_y);
+            $anglezy = acos($over_min_y/$min_y);
             print "Angle : $anglezy radians\n";
+            @vector = $self->rotate3D(0, $min_y, $lower_print_z, -$anglezy, 0);
+            $print_z = pop @vector;
         }
 
-        print "Support needed for $layerm, $slice_z, $print_z, $height \n";
-        return $print_z;
+
+        # If the angle is undefined, affect 0
+        $anglexz //= 0;
+        $angleyz //= 0;
+        $anglezx //= 0;
+        $anglezy //= 0;
+
+        print "Support needed for $layerm, $slice_z, $print_z when rotated, $height \n";
+        return ($print_z, $anglexz, $angleyz, $anglezx, $anglezy);
     }
     else {
         print "No support needed\n";

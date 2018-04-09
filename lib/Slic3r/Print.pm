@@ -49,9 +49,9 @@ sub tilt_process {
 
 sub _tilt_process {
     my ($self, $object) = @_;
-    my $tilt_height = $object->tilt;
+    my ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) = $object->tilt;
     print "HEIGHT $tilt_height\n";
-    return $tilt_height;
+    return ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy);
 }
 
 sub process {
