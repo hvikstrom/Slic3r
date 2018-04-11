@@ -392,7 +392,6 @@ GCodeWriter::tilt(double u, double v, double z)
     this->_level.x = u;
     this->_level.y = v;
     this->_level.z = z;
-    std::cout << "tilt " << u << " " << v << " " << z << std::endl;
     std::ostringstream gcode;
     gcode << "G1 U" << XYZF_NUM(u)
           <<   " V" << XYZF_NUM(v)
@@ -406,7 +405,6 @@ std::string
 GCodeWriter::_travel_to_z(double z, const std::string &comment)
 {
     this->_pos.z = z;
-    std::cout << "_travel_to_z " << z << std::endl;
     std::ostringstream gcode;
     gcode << "G1 Z" << XYZF_NUM(z)
           <<   " F" << XYZF_NUM(this->config.travel_speed.value * 60.0);

@@ -75,6 +75,7 @@ use Slic3r::Print::Object;
 use Slic3r::Print::Simple;
 use Slic3r::Print::SupportMaterial;
 use Slic3r::Surface;
+use Slic3r::BedTilting;
 our $build = eval "use Slic3r::Build; 1";
 use Thread::Semaphore;
 use Encode::Locale 1.05;

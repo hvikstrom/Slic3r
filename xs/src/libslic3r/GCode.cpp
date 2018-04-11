@@ -299,12 +299,10 @@ GCode::change_layer(const Layer &layer)
     }
     
     if (this->config.tilt_enable.value){
-        std::cout << "tilt enabled" << std::endl;
         Pointf3 levels = this->config.tilt_levels.value;
         gcode += this->writer.tilt(levels.x + layer.print_z, levels.y + layer.print_z, levels.z + layer.print_z);
     }
     else {
-    std::cout << "tilt not enabled" << std::endl;
     coordf_t z = layer.print_z + this->config.z_offset.value;  // in unscaled coordinates
     if (EXTRUDER_CONFIG(retract_layer_change) && this->writer.will_move_z(z)) {
         gcode += this->retract();

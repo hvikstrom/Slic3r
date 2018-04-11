@@ -62,14 +62,9 @@ use constant FILAMENT_CHOOSERS_SPACING => 0;
 use constant PROCESS_DELAY => 0.5 * 1000; # milliseconds
 
 our $TILT_GCODE = 0;
-our $TILT_CUT = 0;
-our $TILT_ANGLEXZ = 0;
-our $TILT_ANGLEYZ = 0;
-our $TILT_ANGLEZX = 0;
-our $TILT_ANGLEZY = 0;
-our $BED_LENGTH = 770;
-our $BED_WIDTH = 505;
-our %origin;
+our @prints;
+our @prints_name;
+
 
 sub new {
     my $class = shift;
@@ -1999,389 +1994,30 @@ sub resume_background_process {
 
 
 sub export_tilt_gcode {
-    my ($self, $n_offset_x, $n_offset_y) = @_;
+    my ($self) = @_;
 
-    my $model = $self->{model}->objects->[0];
-    my $model_offset;
-
-    if (!defined $n_offset_x && !defined $n_offset_y){
-        $self->{tilted_model} = Slic3r::Model->new;
-        $self->{tilted_model}->add_object($model);
-        $model = $self->{tilted_model}->objects->[0];
-        $model_offset = Slic3r::Pointf->new(100, 100);
-    }
-    if (defined $n_offset_x and defined $n_offset_y){
-        print "DEFINED\n";
-        if (!($n_offset_x < $BED_LENGTH && $n_offset_x > 0) or !($n_offset_y < $BED_WIDTH && $n_offset_y > 0)){
-            print "IMPOSSIBLE OFFSET\n";
-            return;
-        }
-        $model_offset = Slic3r::Pointf->new($n_offset_x, $n_offset_y);
-        $self->{tilted_model}->clear_objects;
-        $self->{tilted_model}->add_object($self->{model}->objects->[0]);
-        $model = $self->{tilted_model}->objects->[0];
-    }
-    
     $TILT_GCODE = 1;
-
-    my $extruder_y = 40;
-    my $extruder_x = 16;
-
-
-    $model->instances->[0]->set_offset($model_offset);
-    $model->scale_xyz(Slic3r::Pointf3->new(1.5,1.5,1.5));
-
-
-    $self->{print}->clear_objects;
-    $self->{print}->add_model_object($model);
-
-    # apply config and validate print
     my $config = $self->config;
-    $config->set('support_material', 1);
     eval {
-        # this will throw errors if config is not valid
         $config->validate;
-        $self->{print}->apply_config($config);
-        $self->{print}->validate;
-        Slic3r::debugf "apply config ok\n";
-    };
-    my $var_offset = $model->instances->[0]->offset->arrayref;
-    my $offset_x = $var_offset->[0];
-    my $offset_y = $var_offset->[1];
-    print Dumper($offset_x, $offset_y);
-    my @result = $self->{print}->tilt_process;
-    print "RESULT PLATER @result\n";
-
-    my $height = shift @result;
-    my $anglexz = shift @result;
-    $TILT_ANGLEXZ = $anglexz;
-    my $angleyz = shift @result;
-    $TILT_ANGLEYZ = $angleyz;
-    my $anglezx = shift @result;
-    $TILT_ANGLEZX = $anglezx;
-    my $anglezy = shift @result;
-    $TILT_ANGLEZY = $anglezy;
-
-    $TILT_CUT = $height;
-    # my $bb_mod = $model->bounding_box;
-    # print Dumper($bb_mod->x_min);
-    # print Dumper($bb_mod->x_max);
-    # print Dumper($bb_mod->y_min);
-    # print Dumper($bb_mod->y_max);
-    # print Dumper($bb_mod->z_min);
-    # print Dumper($bb_mod->z_max);
-    $var_offset = $model->instances->[0]->offset->arrayref;
-    $offset_x = $var_offset->[0];
-    $offset_y = $var_offset->[1];
-    print Dumper($offset_x, $offset_y);
-    my $offset_z = 0;
-    my @vector;
-
-    #IDEALLY ROTATE HAS TO DO MULTIPLE ROTATION AT THE SAME TIME
-
-    if ($anglexz != 0){
-        print "ROTATION AROUND Y BY -$anglexz\n";
-        $model->rotate(-$anglexz, Y);
-    }
-    if ($angleyz != 0){
-        print "ROTATION AROUND X BY $angleyz\n";
-        $model->rotate($angleyz, X);
-    }
-    if ($anglezx != 0){
-        print "ROTATION AROUND Y BY $anglezx\n";
-        $model->rotate($anglezx, Y);
-    }
-    if ($anglezy != 0){
-        print "ROTATION AROUND X BY -$anglezy\n";
-        $model->rotate(-$anglezy, X);
-    }
-
-    #ANGLEXZ and ANGLEZX shouldn't be different from 0 at the same time, but careful
-
-    @vector = $self->rotate3D($offset_x, $offset_y, $offset_z, $angleyz - $anglezy, $anglezx - $anglexz);
-    my $tr_x = shift @vector;
-    my $tr_y = shift @vector;
-    my $tr_z = shift @vector;
-
-
-    print Dumper($tr_x, $tr_y, $tr_z);
-    $origin{'x'} = $tr_x;
-    $origin{'y'} = $tr_y;
-    $origin{'z'} = $tr_z;
-
-    my $rotate_translation = Slic3r::Pointf3->new($tr_x - $offset_x, $tr_y - $offset_y, $tr_z - $offset_z);
-    $model->translate(@$rotate_translation);
-
-    $var_offset = $model->instances->[0]->offset->arrayref;
-    $offset_x = $var_offset->[0];
-    $offset_y = $var_offset->[1];
-    my $bb_mod = $model->bounding_box;
-
-    $TILT_CUT = $height;
-
-    print "DECOUPAGE\n";
-    print Dumper($bb_mod->z_min, $bb_mod->z_max, $height);
-
-    my $new_model = $model->cut(Z, $TILT_CUT + $bb_mod->z_min);
-
-    my ($upper_object, $lower_object) = @{$new_model->objects};
-
-    $self->{upper_object} = Slic3r::Model->new;
-    $self->{upper_object}->add_object($upper_object);
-    my $upper_obj = $self->{upper_object}->objects->[0];
-    $bb_mod = $upper_obj->bounding_box;
-    print Dumper($bb_mod->z_min, $bb_mod->z_max);
-
-    $var_offset = $upper_obj->instances->[0]->offset->arrayref;
-    $offset_x = $var_offset->[0];
-    $offset_y = $var_offset->[1];
-
-
-    $TILT_CUT = $bb_mod->z_min;
-
-    $self->{lower_object} = Slic3r::Model->new;
-    $self->{lower_object}->add_object($lower_object);
-    my $lower_obj = $self->{lower_object}->objects->[0];
-    $bb_mod = $lower_obj->bounding_box;
-
-    $var_offset = $lower_obj->instances->[0]->offset->arrayref;
-    $offset_x = $var_offset->[0];
-    $offset_y = $var_offset->[1];
-
-    print Dumper($bb_mod->z_min, $bb_mod->z_max);
-
-    print "ROTATION BACK OF LOWER OBJ\n";
-
-    
-
-    $offset_x = $origin{'x'};
-    $offset_y = $origin{'y'};
-    $offset_z = $origin{'z'};
-
-    @vector = $self->rotate3D($offset_x, $offset_y, $offset_z, -($angleyz - $anglezy), -($anglezx - $anglexz));
-
-    $tr_x = shift @vector;
-    $tr_y = shift @vector;
-    $tr_z = shift @vector;
-
-    print Dumper($tr_x, $tr_y, $tr_z);
-
-    $rotate_translation = Slic3r::Pointf3->new($tr_x - $offset_x, $tr_y - $offset_y, $tr_z - $offset_z);
-    $lower_obj->translate(@$rotate_translation);
-
-    $bb_mod = $lower_obj->bounding_box;
-    print "BB MOD\n";
-    print Dumper($bb_mod->z_min, $bb_mod->z_max);
-
-    $lower_obj->rotate($anglexz, Y);
-    $lower_obj->rotate(-$anglezx, Y);
-    $lower_obj->rotate($anglezy, X);
-    $lower_obj->rotate(-$angleyz, X);
-
-    $bb_mod = $lower_obj->bounding_box;
-    print "BB MOD\n";
-    print Dumper($bb_mod->z_min, $bb_mod->z_max);
-
-
-    $self->{print}->clear_objects;
-    $self->tilt(1);
-}
-
-sub rotate3D {
-    my ($self, $x, $y, $z, $n_A, $n_B) = @_;
-
-    print Dumper($n_A, $n_B);
-    my $n_x = ($x * cos($n_B)) + ($z * sin($n_B));
-    my $n_y = ($x * sin($n_A) * sin($n_B)) + ($y * cos($n_A)) - ($z * sin($n_A) * cos($n_B));
-    my $n_z = - ($x * cos($n_A) * sin($n_B)) + ($y * sin($n_A)) + ($z * cos($n_A) * cos($n_B));
-    print "ROTATE 3D\n";
-    print Dumper($n_x, $n_y, $n_z);
-    return ($n_x, $n_y, $n_z);
-}
-
-sub support_levels {
-
-    my ($self, $length, $width, $height, $bed_offset_x, $bed_offset_y) = @_;
-
-    #Can only manage one angle at a time
-
-    #ANGLEXZ and ANGLEZX shouldn't be different from 0 at the same time, but careful
-
-    #The first operation is useful since the extruder (0,0) is (16,40) of the bed
-
-    my @levels = $self->rotate3D($bed_offset_x, $bed_offset_y, 0, -$TILT_ANGLEZY + $TILT_ANGLEYZ, -$TILT_ANGLEXZ + $TILT_ANGLEZX);
-    my $u_level = pop @levels;
-    $u_level += $TILT_CUT;
-
-    my $n_length = $length / 2.0;
-    @levels = $self->rotate3D($n_length, $width, 0, -$TILT_ANGLEZY + $TILT_ANGLEYZ, -$TILT_ANGLEXZ + $TILT_ANGLEZX);
-    my $z_level = pop @levels;
-
-    @levels = $self->rotate3D($length, 0, 0, -$TILT_ANGLEZY + $TILT_ANGLEYZ, -$TILT_ANGLEXZ + $TILT_ANGLEZX);
-    my $v_level = pop @levels;
-    my $uv_level = $u_level - $v_level;
-    my $uz_level = $u_level - $z_level;
-
-
-    print Dumper($u_level, $uz_level, $uv_level, $length, $width);
-
-    return ($u_level, $uz_level, $uv_level);
-
-}
-
-sub tilt {
-    my ($self, $op) = @_;
-
-    return if !@{$self->{objects}};
-
-    my $config = $self->config;
-    $config->set('support_material', 0);
-
-
-    eval {
-        # this will throw errors if config is not valid
-        $config->validate;
-        $self->{print}->apply_config($config);
-        $self->{print}->validate;
     };
 
+    $self->{bed_tilt} = Slic3r::BedTilting->new(
+        _model => $self->{model},
+        _config => $config,
+    );
 
-    if ($op == 1) {
-        $TILT_GCODE = 1;
-        $self->{print}->clear_objects;
-        my $lower_object = $self->{lower_object}->objects->[0];
-
-
-        $self->{print}->add_model_object($lower_object);
-
-        $self->export_gcode("lower1.gcode");
-        return;
-
-    }
-    elsif ($op == 2) {
-
-        my $upper_object = $self->{upper_object}->objects->[0];
-        my $upper_z_offset = $upper_object->bounding_box->z_min;
-        my $upper_height = $upper_object->bounding_box->z_max - $upper_z_offset;
-        $self->{print}->clear_objects;
-        my $sconfig = $self->config;
-        $sconfig->set('support_material', 0);
-        $sconfig->set('skirts', 0);
-
-        $sconfig->set('tilt_enable', $TILT_CUT);
-
-        my $length = 770.0;
-        my $width = 505.0;
-        my $height = 200.0;
-
-        #origin of the extruder on the bed
-
-        my $bed_offset_x = 16.0;
-        my $bed_offset_y = 40.0;
-
-        my $var_offset = $upper_object->instances->[0]->offset->arrayref;
-        my $offset_x = $var_offset->[0];
-        my $offset_y = $var_offset->[1];
-
-        my ($u_level, $z_level, $v_level) = $self->support_levels($length, $width, $height, $bed_offset_x, $bed_offset_y);
-
-        if ($TILT_ANGLEZX){
-            if ($u_level < 0){
-                # +0.5 so that u_level cannot be higher than 0.5
-                my $zx_offset = - (- $u_level + 0.5) / sin($TILT_ANGLEZX);
-                print "change x pos by $zx_offset\n";
-                $self->{upper_object}->clear_objects;
-                $self->{lower_object}->clear_objects;
-                $self->{print}->clear_objects;
-                $self->export_tilt_gcode($zx_offset + $offset_x, $offset_y);
-                return;
-            }
-            if ($v_level + $upper_height > $height) {
-                print "V_LEVEL WILL GO OVER $height, CAN'T PRINT\n";
-                return;
-            }
-        }
-
-        if ($TILT_ANGLEXZ){
-            if ($v_level < 0){
-                # +0.5 so that v_level cannot be higher than 0.5
-                my $xz_offset = - (-$v_level + 0.5 ) / sin(-$TILT_ANGLEXZ);
-                print "change x pos by $xz_offset\n";
-                $self->{upper_object}->clear_objects;
-                $self->{lower_object}->clear_objects;
-                $self->{print}->clear_objects;
-                $self->export_tilt_gcode($xz_offset + $offset_x, $offset_y);
-                return;
-            }
-            if ($u_level + $upper_height > $height){
-                print "U_LEVEL WILL GO OVER $height, CAN'T PRINT\n";
-                return;
-            }
-        }
-
-        if ($TILT_ANGLEZY){
-            if ($u_level < 0){
-                # +0.5 so that v_level cannot be higher than 0.5
-                my $zy_offset = (-$u_level + 0.5 ) / sin(-$TILT_ANGLEZY);
-                print "change y pos by $zy_offset\n";
-                $self->{upper_object}->clear_objects;
-                $self->{lower_object}->clear_objects;
-                $self->{print}->clear_objects;
-                $self->export_tilt_gcode($offset_x, $offset_y + $zy_offset);
-                return;
-            }
-            if ($z_level + $upper_height > $height){
-                print "Z_LEVEL WILL GO OVER $height, CAN'T PRINT\n";
-                return;
-            }
-        }
-
-        if ($TILT_ANGLEYZ){
-            if ($z_level < 0){
-                # +0.5 so that v_level cannot be higher than 0.5
-                my $yz_offset = (-$z_level + 0.5 ) / sin($TILT_ANGLEYZ);
-                print "change y pos by $yz_offset\n";
-                $self->{upper_object}->clear_objects;
-                $self->{lower_object}->clear_objects;
-                $self->{print}->clear_objects;
-                $self->export_tilt_gcode($offset_x, $offset_y + $yz_offset);
-                return;
-            }
-            if ($u_level + $upper_height > $height){
-                print "Z_LEVEL WILL GO OVER $height, CAN'T PRINT\n";
-                return;
-            }
-        }
-
-
-        print "TILT LEVELS\n";
-        my $tilt_levels = Slic3r::Pointf3->new($u_level, $v_level, $z_level);
-        print Dumper($u_level, $v_level, $z_level);
-        $sconfig->set('tilt_levels', $tilt_levels);
-
-        eval {
-            # this will throw errors if config is not valid
-            $sconfig->validate;
-            $self->{print}->apply_config($sconfig);
-            $self->{print}->validate;
-        };
-        print Dumper($self->{print}->config->tilt_enable);
-        print Dumper($self->{print}->config->tilt_levels);
-        
-        $TILT_GCODE = 1;
-        
-        $self->{print}->add_model_object($upper_object);
-
-        $self->export_gcode("upper1.gcode");
-
-        $TILT_GCODE = 0;
-        return;
-    }
-    else {
-        print "tilting done\n";
-        return;
-    }
-
+    my @prints_array = $self->{bed_tilt}->process_bed_tilt;
+    @prints = @prints_array;
+    print "PRINTS\n";
+    print Dumper(@prints);
+    push @prints_name, qw(lower1.gcode upper1.gcode);
+    my $print = shift @prints;
+    $print = shift @prints;
+    my $print_name = shift @prints_name;
+    $self->{print} = $print;
+    $self->export_gcode($print_name);
+    return;
 }
 
 sub export_gcode {
@@ -2399,12 +2035,13 @@ sub export_gcode {
     eval {
         # this will throw errors if config is not valid
         $self->config->validate;
+        print "PRINT VALIDATE\n";
+        print Dumper($self->{print});
         $self->{print}->validate;
     };
     Slic3r::GUI::catch_error($self) and return;
     
     if (!$TILT_GCODE){
-        print "nouvelle config !\n";
         # apply config and validate print
         my $config = $self->config;
         eval {
@@ -2414,10 +2051,11 @@ sub export_gcode {
             $self->{print}->validate;
         };
     }
+
+
     if (!$Slic3r::have_threads) {
         Slic3r::GUI::catch_error($self) and return;
     }
-    print Dumper($self->{print}->config->tilt_enable);
     # select output file
     if ($output_file) {
         $self->{export_gcode_output_file} = $self->{print}->output_filepath($output_file);
@@ -2525,6 +2163,11 @@ sub on_progress_event {
 # This gets called also if we don't have threads.
 sub on_export_completed {
     my ($self, $result) = @_;
+
+    if (!@prints){
+        print "print empty\n";
+        $TILT_GCODE = 0;
+    }
     
     $self->statusbar->SetCancelCallback(undef);
     $self->statusbar->StopBusy;
@@ -2577,8 +2220,10 @@ sub on_export_completed {
     
     # this updates buttons status
     $self->object_list_changed;
-    if ($TILT_GCODE){
-            $self->tilt(2);
+    if ($TILT_GCODE and scalar @prints > 0){
+        $self->{print} = shift @prints;
+        my $print_name = shift @prints_name;
+        $self->export_gcode($print_name);
     }
 }
 
