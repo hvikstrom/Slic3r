@@ -46,6 +46,7 @@ sub slice {
     my $self = shift;
     
     return if $self->step_done(STEP_SLICE);
+    print "SLICE STARTED\n";
     $self->set_step_started(STEP_SLICE);
     $self->print->status_cb->(10, "Processing triangulated mesh");
 
@@ -230,15 +231,11 @@ sub find_extreme_points_polygons {
 sub find_extreme_points {
     my ($self, $polygons) = @_;
 
-    print "FINDING EXTREME POINTS\n";
-
     my $min_x;
     my $max_x;
     my $min_y;
     my $max_y;
 
-    use Data::Dumper;
-    print Dumper($polygons);
     use Check::ISA;
 
     if (obj($polygons, "Slic3r::Polygon")){
@@ -274,6 +271,9 @@ sub tilt {
     if ($self->step_done(STEP_SUPPORTMATERIAL)){
         $self->clear_support_layers;
     }
+
+    print "OBJECT\n";
+    print $self->config->get('support_material');
 
     #Create a special instance of support_material for the tilt
     my $support_material = $self->_support_material(tilt => 1);

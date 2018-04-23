@@ -2011,7 +2011,7 @@ sub export_tilt_gcode {
     @prints = @prints_array;
     print "PRINTS\n";
     print Dumper(@prints);
-    push @prints_name, qw(lower1.gcode upper1.gcode);
+    push @prints_name, qw(lower1.gcode upper1.gcode upper2.gcode);
     my $print = shift @prints;
     $print = shift @prints;
     my $print_name = shift @prints_name;
