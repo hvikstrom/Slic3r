@@ -90,7 +90,15 @@ GCodeWriter::preamble()
         }
         gcode << this->reset_e(true);
     }
-
+    if (this->config.print_tilt.value){
+        double z_level = this->config.initial_z_tilt;
+        gcode << "M584 U3 Z2 V4; Actuate motors independently\n";
+        gcode << "G92 U" << XYZF_NUM(z_level)
+              <<    " V" << XYZF_NUM(z_level)
+              <<    " Z" << XYZF_NUM(z_level)
+              << "\n";
+            
+    }
 
     return gcode.str();
 }

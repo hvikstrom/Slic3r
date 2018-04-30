@@ -14,8 +14,9 @@ if (len(sys.argv) != 4 ):
     usage()
 
 uz = -float(sys.argv[1])
-vz = -float(sys.argv[2])
-zz = -float(sys.argv[3])
+zz = -float(sys.argv[2])
+vz = -float(sys.argv[3])
+
 
 def norme(x,y):
 	return sqrt(pow(x, 2.0) + pow(y,2.0))
@@ -48,6 +49,7 @@ z = fsolve(myFunction, zGuess)
 
 print z[0]
 print z[1]
+print z
 
 
 	

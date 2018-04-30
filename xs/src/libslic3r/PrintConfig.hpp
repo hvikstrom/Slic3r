@@ -185,7 +185,10 @@ class PrintObjectConfig : public virtual StaticPrintConfig
     ConfigOptionFloatOrPercent      support_material_threshold;
     ConfigOptionFloat               xy_size_compensation;
     ConfigOptionInt                 sequential_print_priority;
-    
+    ConfigOptionPoint3              tilt_levels;
+    ConfigOptionFloat               tilt_enable;
+
+
     PrintObjectConfig(bool initialize = true) : StaticPrintConfig() {
         if (initialize)
             this->set_defaults();
@@ -222,6 +225,9 @@ class PrintObjectConfig : public virtual StaticPrintConfig
         OPT_PTR(support_material_threshold);
         OPT_PTR(xy_size_compensation);
         OPT_PTR(sequential_print_priority);
+        OPT_PTR(tilt_levels);
+        OPT_PTR(tilt_enable);
+
         
         return NULL;
     };
@@ -349,6 +355,8 @@ class GCodeConfig : public virtual StaticPrintConfig
     ConfigOptionBool                use_firmware_retraction;
     ConfigOptionBool                use_relative_e_distances;
     ConfigOptionBool                use_volumetric_e;
+    ConfigOptionFloat               print_tilt;
+    ConfigOptionFloat               initial_z_tilt;
     
     GCodeConfig(bool initialize = true) : StaticPrintConfig() {
         if (initialize)
@@ -390,6 +398,8 @@ class GCodeConfig : public virtual StaticPrintConfig
         OPT_PTR(use_firmware_retraction);
         OPT_PTR(use_relative_e_distances);
         OPT_PTR(use_volumetric_e);
+        OPT_PTR(print_tilt);
+        OPT_PTR(initial_z_tilt);
         
         return NULL;
     };
@@ -465,8 +475,6 @@ class PrintConfig : public GCodeConfig
     ConfigOptionBools               wipe;
     ConfigOptionFloat               z_offset;
     ConfigOptionFloat               z_steps_per_mm;
-    ConfigOptionFloat               tilt_enable;
-    ConfigOptionPoint3              tilt_levels;
     
     PrintConfig(bool initialize = true) : GCodeConfig(false) {
         if (initialize)
@@ -529,8 +537,6 @@ class PrintConfig : public GCodeConfig
         OPT_PTR(wipe);
         OPT_PTR(z_offset);
         OPT_PTR(z_steps_per_mm);
-        OPT_PTR(tilt_enable);
-        OPT_PTR(tilt_levels);
         
         // look in parent class
         ConfigOption* opt;

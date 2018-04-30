@@ -62,8 +62,6 @@ use constant FILAMENT_CHOOSERS_SPACING => 0;
 use constant PROCESS_DELAY => 0.5 * 1000; # milliseconds
 
 our $TILT_GCODE = 0;
-our @prints;
-our @prints_name;
 
 
 sub new {
@@ -1998,6 +1996,7 @@ sub export_tilt_gcode {
 
     $TILT_GCODE = 1;
     my $config = $self->config;
+    $config->set('complete_objects', 1);
     eval {
         $config->validate;
     };
@@ -2007,16 +2006,23 @@ sub export_tilt_gcode {
         _config => $config,
     );
 
-    my @prints_array = $self->{bed_tilt}->process_bed_tilt;
-    @prints = @prints_array;
-    print "PRINTS\n";
-    print Dumper(@prints);
-    push @prints_name, qw(lower1.gcode upper1.gcode upper2.gcode);
-    my $print = shift @prints;
-    $print = shift @prints;
-    my $print_name = shift @prints_name;
-    $self->{print} = $print;
-    $self->export_gcode($print_name);
+    # my @prints_array = $self->{bed_tilt}->process_bed_tilt;
+    # @prints = @prints_array;
+    # print "PRINTS\n";
+    # print Dumper(@prints);
+    # push @prints_name, qw(lower1.gcode upper1.gcode upper2.gcode);
+    # my $print = shift @prints;
+    # $print = shift @prints;
+    # my $print_name = shift @prints_name;
+    # $self->{print} = $print;
+    # $self->export_gcode($print_name);
+
+    my $print = $self->{bed_tilt}->process_bed_tilt;
+    if ($print){
+        $self->{print} = $print;
+        $self->export_gcode;
+    }
+
     return;
 }
 
@@ -2164,10 +2170,10 @@ sub on_progress_event {
 sub on_export_completed {
     my ($self, $result) = @_;
 
-    if (!@prints){
-        print "print empty\n";
-        $TILT_GCODE = 0;
-    }
+    # if (!@prints){
+    #     print "print empty\n";
+    #     $TILT_GCODE = 0;
+    # }
     
     $self->statusbar->SetCancelCallback(undef);
     $self->statusbar->StopBusy;
@@ -2220,11 +2226,11 @@ sub on_export_completed {
     
     # this updates buttons status
     $self->object_list_changed;
-    if ($TILT_GCODE and scalar @prints > 0){
-        $self->{print} = shift @prints;
-        my $print_name = shift @prints_name;
-        $self->export_gcode($print_name);
-    }
+    # if ($TILT_GCODE and scalar @prints > 0){
+    #     $self->{print} = shift @prints;
+    #     my $print_name = shift @prints_name;
+    #     $self->export_gcode($print_name);
+    # }
 }
 
 sub do_print {

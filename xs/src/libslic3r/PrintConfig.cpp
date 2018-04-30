@@ -1357,10 +1357,24 @@ PrintConfigDef::PrintConfigDef()
     }
 
     def = this->add("tilt_enable", coFloat);
-    def->label = "Level to enable tilting";
+    def->label = "Enable tilting for object";
     def->category = "Tilt";
-    def->tooltip = "Enable bed-tilting";
+    def->tooltip = "Enable bed-tilting for object";
     def->cli = "tilt-enable";
+    def->default_value = new ConfigOptionFloat(0);
+
+    def = this->add("print_tilt", coFloat);
+    def->label = "Enable tilting for object";
+    def->category = "Tilt";
+    def->tooltip = "Enable bed-tilting for print";
+    def->cli = "print-tilt";
+    def->default_value = new ConfigOptionFloat(0);
+
+    def = this->add("initial_z_tilt", coFloat);
+    def->label = "Z level before printing";
+    def->category = "Tilt";
+    def->tooltip = "Initial value of Z before printing";
+    def->cli = "initial-z-tilt";
     def->default_value = new ConfigOptionFloat(0);
 
     def = this->add("tilt_levels", coPoint3);

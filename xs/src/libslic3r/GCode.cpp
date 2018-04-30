@@ -298,8 +298,8 @@ GCode::change_layer(const Layer &layer)
         gcode += this->writer.update_progress(this->layer_index, this->layer_count);
     }
     
-    if (this->config.tilt_enable.value){
-        Pointf3 levels = this->config.tilt_levels.value;
+    if (this->layer->object()->config.tilt_enable.value){
+        Pointf3 levels = this->layer->object()->config.tilt_levels.value;
         gcode += this->writer.tilt(levels.x + layer.print_z, levels.y + layer.print_z, levels.z + layer.print_z);
     }
     else {
