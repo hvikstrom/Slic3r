@@ -1375,13 +1375,31 @@ PrintConfigDef::PrintConfigDef()
     def->category = "Tilt";
     def->tooltip = "Initial value of Z before printing";
     def->cli = "initial-z-tilt";
-    def->default_value = new ConfigOptionFloat(0);
+    def->default_value = new ConfigOptionFloat(10.0);
 
     def = this->add("tilt_levels", coPoint3);
     def->label = "Tilt levels";
     def->tooltip = "Levels of U,V,W to reach the desired angle";
     def->cli = "tilt-levels";
     def->default_value = new ConfigOptionPoint3(Pointf3(0,0,0));
+
+    def = this->add("origin_offset", coPoint3);
+    def->label = "Origin offset";
+    def->tooltip = "Origin's location in extruder's coordinate system";
+    def->cli = "origin-offset";
+    def->default_value = new ConfigOptionPoint3(Pointf3(-16.1,-37.3,-19.0));
+
+    def = this->add("stl_initial_position", coPoint3);
+    def->label = "STL initial position";
+    def->tooltip = "Object's position in its STL";
+    def->cli = "stl-initial-position";
+    def->default_value = new ConfigOptionPoint3(Pointf3(616.1, 87.3, 0));
+
+    def = this->add("max_angle", coFloat);
+    def->label = "V groove maximal distance";
+    def->tooltip = "Maximal distance the ball can move in the V groove";
+    def->cli = "max-angle";
+    def->default_value = new ConfigOptionFloat(15.0);
 
     def = this->add("support_material", coBool);
     def->label = "Generate support material";

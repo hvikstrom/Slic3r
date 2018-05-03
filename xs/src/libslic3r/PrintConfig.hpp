@@ -187,6 +187,7 @@ class PrintObjectConfig : public virtual StaticPrintConfig
     ConfigOptionInt                 sequential_print_priority;
     ConfigOptionPoint3              tilt_levels;
     ConfigOptionFloat               tilt_enable;
+    ConfigOptionPoint3              stl_initial_position;
 
 
     PrintObjectConfig(bool initialize = true) : StaticPrintConfig() {
@@ -227,7 +228,7 @@ class PrintObjectConfig : public virtual StaticPrintConfig
         OPT_PTR(sequential_print_priority);
         OPT_PTR(tilt_levels);
         OPT_PTR(tilt_enable);
-
+        OPT_PTR(stl_initial_position);
         
         return NULL;
     };
@@ -357,6 +358,8 @@ class GCodeConfig : public virtual StaticPrintConfig
     ConfigOptionBool                use_volumetric_e;
     ConfigOptionFloat               print_tilt;
     ConfigOptionFloat               initial_z_tilt;
+    ConfigOptionPoint3              origin_offset;
+    ConfigOptionFloat               max_angle;
     
     GCodeConfig(bool initialize = true) : StaticPrintConfig() {
         if (initialize)
@@ -400,6 +403,8 @@ class GCodeConfig : public virtual StaticPrintConfig
         OPT_PTR(use_volumetric_e);
         OPT_PTR(print_tilt);
         OPT_PTR(initial_z_tilt);
+        OPT_PTR(origin_offset);
+        OPT_PTR(max_angle);
         
         return NULL;
     };

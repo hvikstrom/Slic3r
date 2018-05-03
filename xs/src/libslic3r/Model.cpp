@@ -751,6 +751,16 @@ ModelObject::rotate(float angle, const Axis &axis)
 }
 
 void
+ModelObject::rotate3D(float angleA, float angleB, float angleC, bool reverse){
+    if (angleA == 0 && angleB == 0 && angleC == 0) return;
+    for (ModelVolumePtrs::const_iterator v = this->volumes.begin(); v != this->volumes.end(); ++v) {
+        (*v)->mesh.rotate3D(angleA, angleB, angleC, reverse);
+    }
+    this->origin_translation = Pointf3(0,0,0);
+    this->invalidate_bounding_box();
+}
+
+void
 ModelObject::mirror(const Axis &axis)
 {
     for (ModelVolumePtrs::const_iterator v = this->volumes.begin(); v != this->volumes.end(); ++v) {

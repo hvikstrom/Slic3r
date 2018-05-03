@@ -278,6 +278,16 @@ void TriangleMesh::translate(float x, float y, float z)
     stl_invalidate_shared_vertices(&this->stl);
 }
 
+void TriangleMesh::rotate3D(float angleA, float angleB, float angleC, bool reverse){
+    angleA = Slic3r::Geometry::rad2deg(angleA);
+    angleB = Slic3r::Geometry::rad2deg(angleB);
+    angleC = Slic3r::Geometry::rad2deg(angleC);
+
+    stl_rotate3D(&(this->stl), angleA, angleB, angleC, reverse);
+    stl_invalidate_shared_vertices(&this->stl);
+
+}
+
 void TriangleMesh::rotate(float angle, const Axis &axis)
 {
     // admesh uses degrees

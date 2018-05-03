@@ -263,7 +263,54 @@ stl_rotate_z(stl_file *stl, float angle) {
   calculate_normals(stl);
 }
 
+void 
+stl_rotate3D(stl_file *stl, float angleA, float angleB, float angleC, bool reverse){
+  double radian_angleA = (angleA / 180.0) * M_PI;
+  double radian_angleB = (angleB / 180.0) * M_PI;
+  double radian_angleC = (angleC / 180.0) * M_PI;
+  float x;
+  float y;
+  float z;
 
+  double cosA = cos(radian_angleA);
+  double sinA = sin(radian_angleA);
+  double cosB = cos(radian_angleB);
+  double sinB = sin(radian_angleB);
+  double cosC = cos(radian_angleC);
+  double sinC = sin(radian_angleC);
+
+  if (stl->error) return;
+  if (!reverse){
+    for(int i = 0; i < stl->stats.number_of_facets; i++) {
+      for(int j = 0; j < 3; j++) {
+        x = *(&stl->facet_start[i].vertex[j].x);
+        y = *(&stl->facet_start[i].vertex[j].y);
+        z = *(&stl->facet_start[i].vertex[j].z);
+
+        *(&stl->facet_start[i].vertex[j].x) = (cosB * cosC) * x + (cosC * sinA * sinB - sinC * cosA) * y + (cosC * sinB * cosA + sinC * sinA) * z;
+        *(&stl->facet_start[i].vertex[j].y) = (sinC * cosB) * x + (sinC * sinA * sinB + cosC * cosA) * y + (sinC * sinB * cosA - sinA * cosC) * z;
+        *(&stl->facet_start[i].vertex[j].z) = -sinB * x + sinA * cosB * y + cosB * cosA * z;
+
+      }
+    }
+  }
+  else {
+    for(int i = 0; i < stl->stats.number_of_facets; i++) {
+      for(int j = 0; j < 3; j++) {
+        x = *(&stl->facet_start[i].vertex[j].x);
+        y = *(&stl->facet_start[i].vertex[j].y);
+        z = *(&stl->facet_start[i].vertex[j].z);
+
+        *(&stl->facet_start[i].vertex[j].x) = (cosB * cosC) * x + (-cosB * sinC) * y + (sinB) * z;
+        *(&stl->facet_start[i].vertex[j].y) = (sinA * sinB * cosC + cosA * sinC) * x + (cosC * cosA - sinC * sinB * sinA) * y + (-sinA * cosB) * z;
+        *(&stl->facet_start[i].vertex[j].z) = (-cosC * cosA * sinB + sinA * sinC) * x + (sinA * cosC + sinC * cosA * sinB) * y + cosB * cosA * z;
+
+      }
+    }
+  }
+  stl_get_size(stl);
+  calculate_normals(stl);
+}
 
 static void
 stl_rotate(float *x, float *y, const double c, const double s) {

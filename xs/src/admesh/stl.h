@@ -203,6 +203,7 @@ extern void calculate_normals(stl_file *stl);
 extern void stl_rotate_x(stl_file *stl, float angle);
 extern void stl_rotate_y(stl_file *stl, float angle);
 extern void stl_rotate_z(stl_file *stl, float angle);
+extern void stl_rotate3D(stl_file *stl, float angleA, float angleB, float angleC, bool reverse);
 extern void stl_mirror_xy(stl_file *stl);
 extern void stl_mirror_yz(stl_file *stl);
 extern void stl_mirror_xz(stl_file *stl);

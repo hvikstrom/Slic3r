@@ -1995,8 +1995,12 @@ sub export_tilt_gcode {
     my ($self) = @_;
 
     $TILT_GCODE = 1;
+
+    my $origin_offset = Slic3r::Pointf3->new(-16.1,-37.3,-19.0);
     my $config = $self->config;
     $config->set('complete_objects', 1);
+    $config->set('origin_offset', $origin_offset);
+    $config->set('max_angle', 13.0);
     eval {
         $config->validate;
     };

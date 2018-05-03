@@ -381,6 +381,8 @@ class ModelObject
     /// \param axis Axis the axis to be rotated around
     void rotate(float angle, const Axis &axis);
 
+    void rotate3D(float angleA, float angleB, float angleC, bool reverse);
+
     /// Mirror the current Model around a certain axis.
     /// \param axis Axis enum member
     void mirror(const Axis &axis);

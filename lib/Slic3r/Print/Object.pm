@@ -312,28 +312,28 @@ sub tilt {
             print "Need tilt x->z\n";
             $anglexz = acos($max_x/$over_max_x);
             print "Angle : $anglexz radians\n";
-            @vector = $self->rotate3D($max_x, 0, $lower_print_z, 0, -$anglexz);
+            @vector = $self->rotate3D($max_x, 0, $lower_print_z, 0, $anglexz);
             $print_z = pop @vector;
         }
         if ($over_max_y > $max_y){
             print "Need tilt y->z\n";
             $angleyz = acos($max_y/$over_max_y);
             print "Angle : $angleyz radians\n";
-            @vector = $self->rotate3D(0, $max_y, $lower_print_z, $angleyz, 0);
+            @vector = $self->rotate3D(0, $max_y, $lower_print_z, -$angleyz, 0);
             $print_z = pop @vector;
         }
         if ($over_min_x < $min_x){
             print "Need tilt z->x\n";
             $anglezx = acos($over_min_x/$min_x);
             print "Angle : $anglezx radians\n";
-            @vector = $self->rotate3D($min_x, 0, $lower_print_z, 0, $anglezx);
+            @vector = $self->rotate3D($min_x, 0, $lower_print_z, 0, -$anglezx);
             $print_z = pop @vector;
         }
         if ($over_min_y < $min_y){
             print "Need tilt z->y\n";
             $anglezy = acos($over_min_y/$min_y);
             print "Angle : $anglezy radians\n";
-            @vector = $self->rotate3D(0, $min_y, $lower_print_z, -$anglezy, 0);
+            @vector = $self->rotate3D(0, $min_y, $lower_print_z, $anglezy, 0);
             $print_z = pop @vector;
         }
 
