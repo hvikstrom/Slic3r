@@ -62,6 +62,7 @@ use constant FILAMENT_CHOOSERS_SPACING => 0;
 use constant PROCESS_DELAY => 0.5 * 1000; # milliseconds
 
 our $TILT_GCODE = 0;
+our @group_names = qw(print filament printer);
 
 
 sub new {
@@ -375,7 +376,7 @@ sub new {
         );
         $self->{preset_choosers} = {};
         $self->{preset_choosers_names} = {};  # wxChoice* => []
-        for my $group (qw(print filament printer)) {
+        for my $group (@group_names) {
             # label
             my $text = Wx::StaticText->new($self, -1, "$group_labels{$group}:", wxDefaultPosition, wxDefaultSize, wxALIGN_RIGHT);
             $text->SetFont($Slic3r::GUI::small_font);
@@ -563,7 +564,7 @@ sub new {
     }
     
     $self->load_presets;
-    $self->_on_select_preset($_) for qw(printer filament print);
+    $self->_on_select_preset($_) for @group_names;
     
     return $self;
 }
@@ -571,7 +572,7 @@ sub new {
 sub prompt_unsaved_changes {
     my ($self) = @_;
     
-    foreach my $group (qw(printer filament print)) {
+    foreach my $group (@group_names) {
         foreach my $choice (@{$self->{preset_choosers}{$group}}) {
             my $pp = $self->{preset_choosers_names}{$choice};
             for my $i (0..$#$pp) {
@@ -681,7 +682,7 @@ sub load_presets {
     my ($self) = @_;
     
     my $selected_printer_name;
-    foreach my $group (qw(printer filament print)) {
+    foreach my $group (@group_names) {
         my @presets = @{wxTheApp->presets->{$group}};
         
         # Skip presets not compatible with the selected printer, if they
@@ -746,6 +747,10 @@ sub load_presets {
                     $bitmap = Wx::Bitmap->new($Slic3r::var->("cog.png"), wxBITMAP_TYPE_PNG);
                 } elsif ($group eq 'printer') {
                     $bitmap = Wx::Bitmap->new($Slic3r::var->("printer_empty.png"), wxBITMAP_TYPE_PNG);
+                } elsif ($group eq 'titler') {
+                    print "load preset bitmap titler\n";
+                    $bitmap = Wx::Bitmap->new($Slic3r::var->("printer_empty.png"), wxBITMAP_TYPE_PNG);
+
                 }
                 $choice->AppendString($preset->dropdown_name, $bitmap);
                 push @{$self->{preset_choosers_names}{$choice}}, $preset->name;
@@ -791,7 +796,7 @@ sub selected_presets {
     my ($self, $group) = @_;
 
     my %presets = ();
-    foreach my $group (qw(printer filament print)) {
+    foreach my $group (@group_names) {
         $presets{$group} = [];
         foreach my $choice (@{$self->{preset_choosers}{$group}}) {
             my $sel = $choice->GetSelection;
@@ -869,7 +874,7 @@ sub config {
     $config->apply(Slic3r::Config->new_from_defaults(@{$self->{config}->get_keys}));
     
     my %classes = map { $_ => "Slic3r::GUI::PresetEditor::".ucfirst($_) }
-        qw(print filament printer);
+        @group_names;
     
     my %presets = $self->selected_presets;
     $config->apply($_->dirty_config) for @{ $presets{printer} };
@@ -1996,17 +2001,18 @@ sub export_tilt_gcode {
 
     $TILT_GCODE = 1;
 
-    my $origin_offset = Slic3r::Pointf3->new(-16.1,-37.3,-19.0);
     my $config = $self->config;
     $config->set('complete_objects', 1);
-    $config->set('origin_offset', $origin_offset);
-    $config->set('max_angle', 13.0);
     eval {
         $config->validate;
     };
 
+    $self->{tilt_model} //= Slic3r::Model->new;
+    $self->{tilt_model}->clear_objects;
+    $self->{tilt_model}->add_object($self->{model}->objects->[0]);
+
     $self->{bed_tilt} = Slic3r::BedTilting->new(
-        _model => $self->{model},
+        _model => $self->{tilt_model},
         _config => $config,
     );
 

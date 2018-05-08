@@ -42,8 +42,10 @@ sub size {
 sub tilt_process {
     my ($self) = @_;
     my @layer_height;
-    $_->infill for @{$self->objects};
-    push @layer_height, $self->_tilt_process($_) for @{$self->objects};
+    my $last_id = scalar @{$self->objects} - 1;
+    my $last_object = $self->objects->[$last_id];
+    $last_object->infill;
+    push @layer_height, $self->_tilt_process($last_object);
     return @layer_height;
 }
 
@@ -51,7 +53,7 @@ sub _tilt_process {
     my ($self, $object) = @_;
     my ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) = $object->tilt;
     print "HEIGHT $tilt_height\n";
-    return ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) unless ( $tilt_height == 0 );
+    return ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) unless ( $tilt_height == 0 or $tilt_height == -1);
     return ($tilt_height);
 }
 

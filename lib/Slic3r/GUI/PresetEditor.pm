@@ -1217,6 +1217,10 @@ sub options {
         retract_length_toolchange retract_restart_extra_toolchange retract_lift_above retract_lift_below
         printer_settings_id
         printer_notes
+        origin_offset
+        stl_initial_position
+        initial_z_tilt
+        max_angle
     );
 }
 
@@ -1233,6 +1237,25 @@ sub build {
     
     $self->{extruders_count} = 1;
     
+
+    {   
+        my $page = $self->add_options_page('Tilter', 'printer_empty.png');
+        {
+            my $optgroup = $page->new_optgroup('Tilting process');
+            $optgroup->append_single_option_line('origin_offset');
+            $optgroup->append_single_option_line('stl_initial_position');
+            $optgroup->append_single_option_line('initial_z_tilt');
+            $optgroup->append_single_option_line('max_angle');
+
+            $optgroup->on_change(sub {
+                my ($opt_id) = @_;
+                wxTheApp->CallAfter(sub {
+                    $self->config->set($opt_id, $optgroup->get_value($opt_id));
+                    $self->_on_value_change($opt_id);
+                });
+            });
+        }
+    }
     {
         my $page = $self->add_options_page('General', 'printer_empty.png');
         {
