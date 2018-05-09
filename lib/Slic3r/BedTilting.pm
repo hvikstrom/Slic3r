@@ -5,6 +5,8 @@ use warnings;
 use Moo;
 use Slic3r::Geometry qw(X Y Z MIN MAX scale unscale deg2rad rad2deg);
 use Data::Dumper;
+use List::MoreUtils qw(any);
+
 
 require Exporter;
 our @ISA = qw(Exporter);
@@ -15,10 +17,10 @@ has '_config' => (is => 'rw', required => 1);
 
 
 our $BED_LENGTH = 770.0;
-our $BED_WIDTH = 505.0;
+our $BED_DIAG = 634.22;
+our $BED_WIDTH = 504.0;
 our $BED_HEIGHT = 200.0;
 our $TILT_GCODE = 1;
-our %origin;
 our $print;
 our $model;
 our %tilt_angles;
@@ -28,7 +30,6 @@ our $retry;
 
 sub clean_values {
     my ($self) = @_;
-    undef %origin;
     undef $print;
     undef $model;
     undef %tilt_angles;
@@ -48,10 +49,11 @@ sub process_bed_tilt {
     if ($retry > 2){
         print "Too many retry\n";
         $retry = 0;
+        $self->clean_values;
         return 0;
     }
 
-    my $origin_offset = $self->{config}->get('origin_offset');#Slic3r::Pointf3->new(-16.1,-37.3,0);#
+    my $origin_offset = $self->{config}->get('origin_offset');
     #Stores the model
 
     #MAKE SURE TO USE COPY
@@ -59,10 +61,8 @@ sub process_bed_tilt {
     $model = Slic3r::Model->new;
     $model->add_object($self->_model->objects->[0]);
     my $original_model_object = $model->objects->[0];
-    my $object_pos = $self->{config}->get('stl_initial_position');#Slic3r::Pointf3->new(616.1,87.3,0);#
-    #print Dumper(@array_pos);
-    my $model_offset = Slic3r::Pointf->new(0 + $origin_offset->x, 0 + $origin_offset->y);
-    #print Dumper($object_pos.x);
+    my $object_pos = $self->{config}->get('stl_initial_position');
+    my $model_offset = Slic3r::Pointf->new($origin_offset->x, $origin_offset->y);
 
     $TILT_GCODE = 1;
 
@@ -72,7 +72,7 @@ sub process_bed_tilt {
 
     #Scale the model just for the example
     #$original_model_object->scale_xyz(Slic3r::Pointf3->new(1.5,1.5,1.5));
-    $original_model_object->rotate(deg2rad(45), Z);
+    #$original_model_object->rotate(deg2rad(45), Z);
     my $move_in_stl = Slic3r::Pointf3->new($object_pos->x - $origin_offset->x, $object_pos->y - $origin_offset->y, 0);
     $original_model_object->translate(@$move_in_stl);
 
@@ -81,6 +81,7 @@ sub process_bed_tilt {
     if (!($bb_mod->x_max < $BED_LENGTH && $bb_mod->x_min > 0) or !($bb_mod->y_max < $BED_WIDTH && $bb_mod->y_min > 0)){
         print Dumper($bb_mod->x_max, $bb_mod->x_min, $bb_mod->y_max, $bb_mod->y_min);
         print "IMPOSSIBLE OFFSET\n";
+        $self->clean_values;
         return 0;
     }
 
@@ -112,48 +113,31 @@ sub process_bed_tilt {
         print "ITERATION NUMBER $iter_result\n";
         #Should contain (TILT_LEVEL, ANGLEXZ, ANGLEYZ, ANGLEZX, ANGLEZY)
         print "RESULT PLATER @result\n";
-        my $index = 0;
-        my $tilt_cut = 0;
-        my @angles;
-        my $current_model_object;
         my $last_id = scalar @{$model->objects} - 1;
 
-
-        $tilt_cut = shift @result;
+        my $tilt_cut = shift @result;
         push @tilt_cuts_array, $tilt_cut;
-        @angles = @result;
-        $angles[0] -= 0.2;
-        $angles[3] -= 0.2;
+        my @angles = @result;
+        #$angles[0] -= 0.2;
+        $angles[3] -= 0.35;
         $tilt_angles{$tilt_cut} = [ @angles ];
 
-        my $anglexz = shift @angles;
-        my $angleyz = shift @angles;
-        my $anglezx = shift @angles;
-        my $anglezy = shift @angles;
+        my ($anglexz, $angleyz, $anglezx, $anglezy)  = @angles;
 
-        $current_model_object = $model->objects->[$last_id];
+        my $current_model_object = $model->objects->[$last_id];
 
 
-        my $var_offset = $current_model_object->instances->[0]->offset->arrayref;
-        my $offset_x = $var_offset->[0];
-        my $offset_y = $var_offset->[1];
+        # my $var_offset = $current_model_object->instances->[0]->offset->arrayref;
+        # my $offset_x = $var_offset->[0];
+        # my $offset_y = $var_offset->[1];
 
-        $bb_mod = $current_model_object->bounding_box;
+        # $bb_mod = $current_model_object->bounding_box;
 
-        print "TEST MODEL\n";
-        $self->print_dumper($offset_x, $offset_y, $bb_mod);
+        # print "TEST MODEL\n";
+        # $self->print_dumper($offset_x, $offset_y, $bb_mod);
 
         my $z_translation = Slic3r::Pointf3->new(0,0,-$origin_offset->z);
         $current_model_object->translate(@$z_translation);
-
-        print "Z TRANSLATION\n";
-
-        $var_offset = $current_model_object->instances->[0]->offset->arrayref;
-        $offset_x = $var_offset->[0];
-        $offset_y = $var_offset->[1];
-        $bb_mod = $current_model_object->bounding_box;
-
-        #$self->print_dumper($offset_x, $offset_y, $bb_mod);
 
         #IDEALLY ROTATE HAS TO DO MULTIPLE ROTATION AT THE SAME TIME
 
@@ -163,27 +147,16 @@ sub process_bed_tilt {
 
         $bb_mod = $current_model_object->bounding_box;
 
-
-
-        $var_offset = $current_model_object->instances->[0]->offset->arrayref;
-        $offset_x = $var_offset->[0];
-        $offset_y = $var_offset->[1];
-        $bb_mod = $current_model_object->bounding_box;
-
-        #$self->print_dumper($offset_x, $offset_y, $bb_mod);
-
         my @offsets = $self->check_viability(\@{$tilt_angles{$tilt_cut}}, $bb_mod, $tilt_cut);
         if (scalar @offsets == 1){
             print "Impossible tilt\n";
+            $self->clean_values;
             return 0;
         }
         else {
-            my $xz_offset = shift @offsets;
-            my $yz_offset = shift @offsets;
-            my $zx_offset = shift @offsets;
-            my $zy_offset = shift @offsets;
+            my ($xz_offset, $yz_offset, $zx_offset, $zy_offset) = @offsets;
 
-            if ($xz_offset or $yz_offset or $zx_offset or $zy_offset){
+            if (any { $_ != 0 } @offsets){
                 $retry += 1;
                 $object_pos = $self->_config->get('stl_initial_position');
                 my $new_object_pos = Slic3r::Pointf3->new($object_pos->x + $xz_offset + $zx_offset, $object_pos->y + $yz_offset + $zy_offset, $object_pos->z);
@@ -202,14 +175,10 @@ sub process_bed_tilt {
 
         my ($u_level, $z_level, $v_level) = $self->support_levels($tilt_cuts_array[$iter_result]);
 
-        my @levels;
-
-        push @levels, $u_level;
-        push @levels, $z_level;
-        push @levels, $v_level;
+        my @levels = ($u_level, $z_level, $v_level);
         
         @offsets = $self->check_levels(\@levels, \@{$tilt_angles{$tilt_cut}});
-        if ($offsets[0] or $offsets[1]){
+        if (any {$_ != 0} @offsets){
             $retry += 1;
             $object_pos = $self->_config->get('stl_initial_position');
             my $new_object_pos = Slic3r::Pointf3->new($object_pos->x + $offsets[0], $object_pos->y + $offsets[1], $object_pos->z);
@@ -224,22 +193,13 @@ sub process_bed_tilt {
         $model->delete_object($last_id);
 
         $model->add_object($lower_object);
-        $lower_object = $model->objects->[$last_id];
-        $bb_mod = $lower_object->bounding_box;
 
-        $var_offset = $lower_object->instances->[0]->offset->arrayref;
-        $offset_x = $var_offset->[0];
-        $offset_y = $var_offset->[1];
+        $lower_object = $model->objects->[$last_id];
 
         print "ROTATION YZ -$angleyz $anglezy ZX -$anglezx $anglexz\n";
         $lower_object->rotate3D(- $angleyz + $anglezy, - $anglezx + $anglexz, 0,1);
 
         $bb_mod = $lower_object->bounding_box;
-        $var_offset = $lower_object->instances->[0]->offset->arrayref;
-        $offset_x = $var_offset->[0];
-        $offset_y = $var_offset->[1];
-
-        #$self->print_dumper($offset_x, $offset_y, $bb_mod);
 
         $model->add_object($upper_object);
         $upper_object = $model->objects->[$last_id + 1];
@@ -252,29 +212,20 @@ sub process_bed_tilt {
         $model->objects->[$last_id]->translate(@$z_translation);
         $tilt_levels{$tilt_cuts_array[$iter_result]} = [ @levels ];
 
-        my $tilt_offset_x = 0;
-        my $tilt_offset_y = 0;
 
-        #print Dumper(@levels);
 
-        my @cmd = qw(python nonlinear-solver.py);
-        push @cmd, @levels;
-
-        use IPC::Run3;
-
-        run3 [@cmd], undef, \my @out, \my $err;
-
-        $tilt_offset_x = shift @out;
-        $tilt_offset_y = shift @out;
-
-        my $tilt_offset = Slic3r::Pointf3->new($tilt_offset_x, $tilt_offset_y, 0);
-        #print Dumper(@$tilt_offset);
+        my $tilt_offset = $self->compute_tilts(\@levels);
+        if (!$tilt_offset){
+            $self->clean_values;
+            return 0;
+        }
+        print "TILT OFFSET\n";
+        print Dumper(@$tilt_offset);
         $model->objects->[$last_id + 1]->translate(@$tilt_offset);
 
         #Enable support material to detect further need of tilt on the upper part
 
         $self->support_material_print($last_id + 1, 1,$model);
-        print Dumper($model->objects->[$last_id + 1]->config->get('support_material'));
         $print->add_model_object($model->objects->[$last_id + 1]);
         @result = $print->tilt_process;
 
@@ -297,7 +248,40 @@ sub process_bed_tilt {
         $index += 1;
     }
     $retry = 0;
-    return $print;
+    # return $print;
+    return $model;
+}
+
+sub compute_tilts {
+    my ($self, $levels_ref) = @_;
+
+    my @levels = @{$levels_ref};
+
+    my @cmd = qw(python nonlinear-solver.py);
+    push @cmd, @levels;
+    push @cmd, $BED_LENGTH;
+    push @cmd, $BED_DIAG;
+
+    use IPC::Run3;
+
+    run3 [@cmd], undef, \my @out, \my $err;
+
+    my ($tilt_ux, $tilt_uy, $tilt_vx, $tilt_vy, $tilt_zy) = @out;
+
+    $tilt_vx -= $BED_LENGTH;
+    $tilt_zy -= $BED_WIDTH;
+
+    my $max_angle = $self->{config}->get('max_angle');
+
+    my @max_tilt = (abs($tilt_ux), abs($tilt_uy), abs($tilt_vx), abs($tilt_vy), abs($tilt_zy));
+    if (any {$_ > $max_angle} @max_tilt){
+        print "ERROR ANGLE\n";
+        print Dumper(@max_tilt);
+        return 0;
+    }
+
+    my $tilt_offset = Slic3r::Pointf3->new($tilt_ux, $tilt_uy, 0);
+    return $tilt_offset;
 }
 
 sub print_dumper {
@@ -314,12 +298,8 @@ sub print_dumper {
 
 sub check_viability {
     my ($self, $angles_ref, $bb_mod, $tilt_cut) = @_;
-    my @angles = @{$angles_ref};
 
-    my $anglexz = shift @angles;
-    my $angleyz = shift @angles;
-    my $anglezx = shift @angles;
-    my $anglezy = shift @angles;
+    my ($anglexz, $angleyz, $anglezx, $anglezy) = @{$angles_ref};
 
     my $zy_offset = 0;
     my $zx_offset = 0;
@@ -355,18 +335,10 @@ sub check_viability {
 sub check_levels {
     my ($self, $levels_ref, $angles_ref) = @_;
 
-    my @levels = @{$levels_ref};
-    my @angles = @{$angles_ref};
-
-    my $anglexz = shift @angles;
-    my $angleyz = shift @angles;
-    my $anglezx = shift @angles;
-    my $anglezy = shift @angles;
+    my ($anglexz, $angleyz, $anglezx, $anglezy) = @{$angles_ref};
 
 
-    my $u_level = shift @levels;
-    my $z_level = shift @levels;
-    my $v_level = shift @levels;
+    my ($u_level, $z_level, $v_level) = @{$levels_ref};
 
     my $xz_offset = 0;
     my $yz_offset = 0;
@@ -404,13 +376,8 @@ sub rotate3D_z {
 sub support_levels {
 
     my ($self, $tilt_level) = @_;
-
-    my @angles = @{$tilt_angles{$tilt_level}};
     
-    my $anglexz = shift @angles;
-    my $angleyz = shift @angles;
-    my $anglezx = shift @angles;
-    my $anglezy = shift @angles;
+    my ($anglexz, $angleyz, $anglezx, $anglezy) = @{$tilt_angles{$tilt_level}};
 
     #Can only manage one angle at a time
 
@@ -455,9 +422,7 @@ sub add_print {
 
         my @levels = @{$tilt_levels{$tilt_cut}};
 
-        my $u_level = shift @levels;
-        my $z_level = shift @levels;
-        my $v_level = shift @levels;
+        my ($u_level, $z_level, $v_level) = @levels;
 
         my $point_levels = Slic3r::Pointf3->new($u_level, $v_level, $z_level);
 
@@ -467,7 +432,7 @@ sub add_print {
         $config_object->set('sequential_print_priority', $index);
     }
 
-    $print->add_model_object($object);
+    # $print->add_model_object($object);
 }
 
 sub support_material_print {

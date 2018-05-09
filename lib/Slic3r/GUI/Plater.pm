@@ -2014,22 +2014,25 @@ sub export_tilt_gcode {
     $self->{bed_tilt} = Slic3r::BedTilting->new(
         _model => $self->{tilt_model},
         _config => $config,
-    );
+    ); 
 
-    # my @prints_array = $self->{bed_tilt}->process_bed_tilt;
-    # @prints = @prints_array;
-    # print "PRINTS\n";
-    # print Dumper(@prints);
-    # push @prints_name, qw(lower1.gcode upper1.gcode upper2.gcode);
-    # my $print = shift @prints;
-    # $print = shift @prints;
-    # my $print_name = shift @prints_name;
-    # $self->{print} = $print;
-    # $self->export_gcode($print_name);
+    $self->{tilt_model} = $self->{bed_tilt}->process_bed_tilt;
+    if ($self->{tilt_model}){
+        $self->{print}->clear_objects;
+        for my $object (@{$self->{tilt_model}->objects}){
+            $self->{print}->add_model_object($object);
+        }
 
-    my $print = $self->{bed_tilt}->process_bed_tilt;
-    if ($print){
-        $self->{print} = $print;
+        $config->set('skirts', 1);
+        $config->set('print_tilt', 1);
+        $config->set('initial_z_tilt', 10.0);
+
+        eval {
+            # this will throw errors if config is not valid
+            $config->validate;
+            $self->{print}->apply_config($config);
+            $self->{print}->validate;
+        };
         $self->export_gcode;
     }
 

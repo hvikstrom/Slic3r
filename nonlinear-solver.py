@@ -10,12 +10,14 @@ def usage():
     print "Need 3 arguments matching the levels of U, V and Z"
     sys.exit(0)
 
-if (len(sys.argv) != 4 ):
+if (len(sys.argv) != 6 ):
     usage()
 
 uz = -float(sys.argv[1])
 zz = -float(sys.argv[2])
 vz = -float(sys.argv[3])
+A = float(sys.argv[4])
+C = float(sys.argv[5])
 
 
 def norme(x,y):
@@ -28,8 +30,6 @@ def myFunction(z):
 	vy = z[3]
 	zy = z[4]
 
-	A = 770.0
-	C = 634.22
 	B = sqrt(C**2.0 - (A/2.0)**2.0)
 	phi = radians(26)#atan((B / 3.0) / ( A / 2.0 ))
 	zx = A / 2.0
@@ -49,7 +49,9 @@ z = fsolve(myFunction, zGuess)
 
 print z[0]
 print z[1]
-print z
+print z[2]
+print z[3]
+print z[4]
 
 
 	

@@ -248,8 +248,7 @@ sub find_extreme_points {
             }
         }
     }
-    use Data::Dumper;
-    #print Dumper($min_x, $max_x, $min_y, $max_y);
+
     return ($min_x, $max_x, $min_y, $max_y);
 }
 
@@ -286,14 +285,11 @@ sub tilt {
     if (!$tilt) {
         my $layer = $layerm->layer;
         my $lower_layer = $layer->lower_layer;
-        my $slice_z = $layer->slice_z;
-        my $print_z = $layer->print_z;
         my $lower_print_z = $lower_layer->print_z;
         my $height = $layer->height;
         my $fw = $layerm->flow(FLOW_ROLE_EXTERNAL_PERIMETER)->scaled_width;
         my $conf = $self->config;
         my $d = +$conf->get_abs_value_over('support_material_threshold', $fw);
-        my @vector;
 
         my ($over_min_x, $over_max_x, $over_min_y, $over_max_y) = $self->find_extreme_points($layer->slices->polygons);
 
@@ -328,6 +324,7 @@ sub tilt {
         my $anglezy;
         my $angled;
         $angled = atan(unscale $d / $height);
+        my $print_z = 0;
 
         #CANNOT DO ZX AND XZ / ZY AND YZ at the same time
 
@@ -390,7 +387,7 @@ sub tilt {
         $anglezx //= 0;
         $anglezy //= 0;
 
-        print "Support needed for $layerm, $slice_z, $print_z when rotated, $height \n";
+        print "Support needed for $layerm, $print_z when rotated, $height \n";
         return ($print_z, $anglexz, $angleyz, $anglezx, $anglezy) unless (!$anglexz and !$angleyz and !$anglezx and !$anglezy);
         return 0;
     }
