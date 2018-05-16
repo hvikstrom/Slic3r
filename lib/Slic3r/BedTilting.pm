@@ -134,6 +134,8 @@ sub process_bed_tilt {
         my ($anglexz, $angleyz, $anglezx, $anglezy)  = @angles;
 
         my $current_model_object = $model->objects->[$last_id];
+        print "CURRENT MODEL OBJECT\n";
+        print Dumper($current_model_object);
 
 
         # my $var_offset = $current_model_object->instances->[0]->offset->arrayref;

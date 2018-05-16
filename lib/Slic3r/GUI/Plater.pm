@@ -82,7 +82,9 @@ sub new {
     $self->{tilt_print} = Slic3r::Print->new;
     $self->{tilt_objects} = [];
     $self->{tilt_processed} = 0;
+    $self->{tilt_processing} = 0;
     $self->{processed} = 0;
+    $self->{tilt_objects} = [];
     # List of Perl objects Slic3r::GUI::Plater::Object, representing a 2D preview of the platter.
     $self->{objects} = [];
 
@@ -112,6 +114,10 @@ sub new {
     my $on_select_object = sub {
         my ($obj_idx) = @_;
         $self->select_object($obj_idx);
+    };
+    my $select_tilt = sub {
+        my ($obj_idx) = @_;
+        $self->select_tilt_object($obj_idx);
     };
     my $on_double_click = sub {
         $self->object_settings_dialog if $self->selected_object;
@@ -157,6 +163,7 @@ sub new {
     $self->{tilt3D_page_idx} = -1;
     if ($Slic3r::GUI::have_OpenGL) {
         $self->{tilt3D} = Slic3r::GUI::Plater::Tilt3D->new($self->{preview_notebook}, $self->{tilt_objects}, $self->{view_tilt_model}, $self->{config});
+        $self->{tilt3D}->set_on_select_object($select_tilt);
         $self->{preview_notebook}->AddPage($self->{tilt3D}, 'Tilt3D');
         $self->{tilt3D_page_idx} = $self->{preview_notebook}->GetPageCount-1;
         $self->{tilt3D}->on_viewport_changed(sub {
@@ -301,15 +308,7 @@ sub new {
         $self->export_gcode;
     });
     EVT_BUTTON($self, $self->{btn_export_tilt_gcode}, sub {
-        if (!$self->{tilt_processed}){
-            $self->start_tilt_process;
-        }
-        if (!$self->{temp_print}){
-            $self->{temp_print} = $self->{print};
-            $self->{print} = $self->{tilt_print};
-            my $config = $self->config;
-            $self->{print}->apply_config($config);
-        }
+        $self->{tilt_processing} = 1;
         $self->export_gcode;
     });
     EVT_BUTTON($self, $self->{btn_print}, sub {
@@ -2063,6 +2062,11 @@ sub start_tilt_process {
     ); 
 
     my ($result_model, $view_model) = $self->{bed_tilt}->process_bed_tilt;
+
+    if (!$result_model){
+        return 0;
+    }
+
     $self->{tilt_processed} = 1;
     print "ON MODEL CHANGE\n";
     print Dumper(scalar @{$result_model->objects});
@@ -2074,8 +2078,10 @@ sub start_tilt_process {
     for my $object (@{$result_model->objects}){
         $self->{tilt_model}->add_object($object);
         $self->{tilt_print}->add_model_object($object);
+        push @{ $self->{tilt_objects} }, $object;
     }
-    $self->on_model_change;
+    
+    $self->{tilt3D}->update;
 
     return 1;
 }
@@ -2088,6 +2094,16 @@ sub export_gcode {
     if ($self->{export_gcode_output_file}) {
         Wx::MessageDialog->new($self, "Another export job is currently running.", 'Error', wxOK | wxICON_ERROR)->ShowModal;
         return;
+    }
+
+    if (!$self->{tilt_processed} && $self->{tilt_processing}){
+        $self->{tilt_processing} = 0;
+        return 0 if ($self->start_tilt_process);
+    }
+    if (!$self->{temp_print} && $self->{tilt_processing}){
+        $self->{temp_print} = $self->{print};
+        $self->{print} = $self->{tilt_print};
+        $self->{tilt_processing} = 0;
     }
     
     # if process is not running, validate config
@@ -2584,7 +2600,7 @@ sub on_thumbnail_made {
 # (i.e. when an object is added/removed/moved/rotated/scaled)
 sub on_model_change {
     my ($self, $force_autocenter) = @_;
-    
+
     # reload the select submenu (if already initialized)
     if (my $menu = $self->GetFrame->{plater_select_menu}) {
         $menu->DeleteItem($_) for $menu->GetMenuItems;
@@ -2623,6 +2639,7 @@ sub on_model_change {
         $self->{model}->center_instances_around_point($self->bed_centerf);
     }
     $self->refresh_canvases;
+    $self->tilt_update;
     
     my $invalidated = $self->{print}->reload_model_instances();
     
@@ -2640,6 +2657,16 @@ sub on_model_change {
     } else {
         $self->hide_preview;
     }
+}
+
+sub tilt_update {
+    my ($self) = @_;
+    
+    $self->{tilt_model}->clear_objects;
+    $self->{tilt_print}->clear_objects;
+    $self->{view_tilt_model}->clear_objects;
+    $self->{tilt3D}->update;
+    $self->{tilt_processed} = 0;
 }
 
 sub hide_preview {
@@ -2905,6 +2932,15 @@ sub selection_changed {
     $self->GetFrame->on_plater_selection_changed($have_sel);
 }
 
+sub select_tilt_object {
+    my ($self, $obj_idx) = @_;
+
+    if (defined $obj_idx){
+        print Dumper($self->{tilt_objects}->[$obj_idx]->config->get('tilt_levels'));
+    }
+    $self->selection_changed(1);
+}
+
 sub select_object {
     my ($self, $obj_idx) = @_;
 
@@ -2959,7 +2995,6 @@ sub refresh_canvases {
     
     $self->{canvas}->Refresh;
     $self->{canvas3D}->update if $self->{canvas3D};
-    $self->{tilt3D}->update if $self->{tilt3D};
     $self->{preview3D}->reload_print if $self->{preview3D};
 }
 
