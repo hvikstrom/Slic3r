@@ -12,6 +12,7 @@ use base qw(Slic3r::GUI::3DScene Class::Accessor);
 
 sub new {
     my $class = shift;
+    use Data::Dumper;
     my ($parent, $objects, $model, $config) = @_;
     
     my $self = $class->SUPER::new($parent);

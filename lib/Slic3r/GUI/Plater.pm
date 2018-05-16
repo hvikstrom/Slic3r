@@ -58,10 +58,10 @@ our $ERROR_EVENT             : shared = Wx::NewEventType;
 our $EXPORT_COMPLETED_EVENT  : shared = Wx::NewEventType;
 our $PROCESS_COMPLETED_EVENT : shared = Wx::NewEventType;
 
+
 use constant FILAMENT_CHOOSERS_SPACING => 0;
 use constant PROCESS_DELAY => 0.5 * 1000; # milliseconds
 
-our $TILT_GCODE = 0;
 our @group_names = qw(print filament printer);
 
 
@@ -72,9 +72,16 @@ sub new {
     $self->{config} = Slic3r::Config->new_from_defaults(qw(
         bed_shape complete_objects extruder_clearance_radius skirts skirt_distance brim_width
         serial_port serial_speed host_type print_host octoprint_apikey shortcuts filament_colour
+        origin_offset stl_initial_position max_angle
     ));
     $self->{model} = Slic3r::Model->new;
     $self->{print} = Slic3r::Print->new;
+    $self->{tilt_model} = Slic3r::Model->new;
+    $self->{view_tilt_model} = Slic3r::Model->new;
+    $self->{temp_print} = undef;
+    $self->{tilt_print} = Slic3r::Print->new;
+    $self->{tilt_objects} = [];
+    $self->{tilt_processed} = 0;
     $self->{processed} = 0;
     # List of Perl objects Slic3r::GUI::Plater::Object, representing a 2D preview of the platter.
     $self->{objects} = [];
@@ -133,9 +140,10 @@ sub new {
         $self->{canvas3D}->set_on_instances_moved($on_instances_moved);
         $self->{canvas3D}->on_viewport_changed(sub {
             $self->{preview3D}->canvas->set_viewport_from_scene($self->{canvas3D});
+            $self->{tilt3D}->set_viewport_from_scene($self->{canvas3D});
         });
     }
-    
+
     # Initialize 2D preview canvas
     $self->{canvas} = Slic3r::GUI::Plater::2D->new($self->{preview_notebook}, wxDefaultSize, $self->{objects}, $self->{model}, $self->{config});
     $self->{preview_notebook}->AddPage($self->{canvas}, '2D');
@@ -143,6 +151,19 @@ sub new {
     $self->{canvas}->on_double_click($on_double_click);
     $self->{canvas}->on_right_click(sub { $on_right_click->($self->{canvas}, @_); });
     $self->{canvas}->on_instances_moved($on_instances_moved);
+
+
+    # Initialiaze tilt canvas
+    $self->{tilt3D_page_idx} = -1;
+    if ($Slic3r::GUI::have_OpenGL) {
+        $self->{tilt3D} = Slic3r::GUI::Plater::Tilt3D->new($self->{preview_notebook}, $self->{tilt_objects}, $self->{view_tilt_model}, $self->{config});
+        $self->{preview_notebook}->AddPage($self->{tilt3D}, 'Tilt3D');
+        $self->{tilt3D_page_idx} = $self->{preview_notebook}->GetPageCount-1;
+        $self->{tilt3D}->on_viewport_changed(sub {
+            $self->{preview3D}->canvas->set_viewport_from_scene($self->{tilt3D});
+            $self->{canvas3D}->set_viewport_from_scene($self->{tilt3D});
+        });
+    }
     
     # Initialize 3D toolpaths preview
     $self->{preview3D_page_idx} = -1;
@@ -150,6 +171,7 @@ sub new {
         $self->{preview3D} = Slic3r::GUI::Plater::3DPreview->new($self->{preview_notebook}, $self->{print});
         $self->{preview3D}->canvas->on_viewport_changed(sub {
             $self->{canvas3D}->set_viewport_from_scene($self->{preview3D}->canvas);
+            $self->{tilt3D}->set_viewport_from_scene($self->{preview3D}->canvas);
         });
         $self->{preview_notebook}->AddPage($self->{preview3D}, 'Preview');
         $self->{preview3D_page_idx} = $self->{preview_notebook}->GetPageCount-1;
@@ -167,6 +189,10 @@ sub new {
         wxTheApp->CallAfter(sub {
             my $sel = $self->{preview_notebook}->GetSelection;
             if ($sel == $self->{preview3D_page_idx} || $sel == $self->{toolpaths2D_page_idx}) {
+                if ($self->{temp_print}){
+                    $self->{print} = $self->{temp_print};
+                    $self->{temp_print} = undef;
+                }
                 if (!$Slic3r::GUI::Settings->{_}{background_processing} && !$self->{processed}) {
                     $self->statusbar->SetCancelCallback(sub {
                         $self->stop_background_process;
@@ -176,8 +202,11 @@ sub new {
                     });
                     $self->start_background_process;
                 } else {
-                    $self->{preview3D}->load_print
-                        if $sel == $self->{preview3D_page_idx};
+                    $self->{preview3D}->load_print if $sel == $self->{preview3D_page_idx};
+                }
+            } elsif ($sel == $self->{tilt3D_page_idx}) {
+                if (!$self->{tilt_processed}){
+                    $self->start_tilt_process;
                 }
             }
         });
@@ -265,11 +294,23 @@ sub new {
     $self->selection_changed(0);
     $self->object_list_changed;
     EVT_BUTTON($self, $self->{btn_export_gcode}, sub {
-        $TILT_GCODE = 0;
+        if ($self->{temp_print}){
+            $self->{print} = $self->{temp_print};
+            $self->{temp_print} = undef;
+        }
         $self->export_gcode;
     });
     EVT_BUTTON($self, $self->{btn_export_tilt_gcode}, sub {
-        $self->export_tilt_gcode;
+        if (!$self->{tilt_processed}){
+            $self->start_tilt_process;
+        }
+        if (!$self->{temp_print}){
+            $self->{temp_print} = $self->{print};
+            $self->{print} = $self->{tilt_print};
+            my $config = $self->config;
+            $self->{print}->apply_config($config);
+        }
+        $self->export_gcode;
     });
     EVT_BUTTON($self, $self->{btn_print}, sub {
         $self->{print_file} = $self->export_gcode(Wx::StandardPaths::Get->GetTempDir());
@@ -316,7 +357,7 @@ sub new {
     
     $_->SetDropTarget(Slic3r::GUI::Plater::DropTarget->new($self))
         for grep defined($_),
-            $self, $self->{canvas}, $self->{canvas3D}, $self->{preview3D};
+            $self, $self->{canvas}, $self->{canvas3D}, $self->{preview3D}, $self->{tilt3D};
     
     EVT_COMMAND($self, -1, $THUMBNAIL_DONE_EVENT, sub {
         my ($self, $event) = @_;
@@ -346,7 +387,7 @@ sub new {
         my ($self, $event) = @_;
         $self->on_process_completed($event->GetData);
     });
-    
+
     if ($Slic3r::have_threads) {
         my $timer_id = Wx::NewId();
         $self->{apply_config_timer} = Wx::Timer->new($self, $timer_id);
@@ -360,6 +401,10 @@ sub new {
     if ($self->{canvas3D}) {
         $self->{canvas3D}->update_bed_size;
         $self->{canvas3D}->zoom_to_bed;
+    }
+    if ($self->{tilt3D}) {
+        $self->{tilt3D}->update_bed_size;
+        $self->{tilt3D}->zoom_to_bed;
     }
     if ($self->{preview3D}) {
         $self->{preview3D}->set_bed_shape($self->{config}->bed_shape);
@@ -1332,7 +1377,10 @@ sub load_model_objects {
     
     # zoom to objects
     $self->{canvas3D}->zoom_to_volumes
-        if $self->{canvas3D};
+        if ($self->{canvas3D});
+
+    $self->{tilt3D}->zoom_to_volumes
+        if ($self->{tilt3D});
     
     $self->object_list_changed;
     
@@ -1370,6 +1418,7 @@ sub remove {
     splice @{$self->{objects}}, $obj_idx, 1;
     $self->{model}->delete_object($obj_idx);
     $self->{print}->delete_object($obj_idx);
+
     $self->object_list_changed;
     
     $self->select_object(undef);
@@ -1813,6 +1862,7 @@ sub config_changed {
         if ($opt_key eq 'bed_shape') {
             $self->{canvas}->update_bed_size;
             $self->{canvas3D}->update_bed_size if $self->{canvas3D};
+            $self->{tilt3D}->update_bed_size if $self->{tilt3D};
             $self->{preview3D}->set_bed_shape($self->{config}->bed_shape)
                 if $self->{preview3D};
             $self->on_model_change;
@@ -1895,7 +1945,6 @@ sub async_apply_config {
 
 sub start_background_process {
     my ($self) = @_;
-    
     return if !$Slic3r::have_threads;
     return if $self->{process_thread};
     
@@ -1908,26 +1957,22 @@ sub start_background_process {
     # "Attempt to free unreferenced scalar" warning...
     local $SIG{__WARN__} = Slic3r::GUI::warning_catcher($self);
     
-    if (!$TILT_GCODE){
-
-        # don't start process thread if config is not valid
-        eval {
-            # this will throw errors if config is not valid
-            my $config = $self->config;
-            $config->validate;
-            $self->{print}->apply_config($config);
-            $self->{print}->validate;
-        };
-        if ($@) {
-            $self->statusbar->SetStatusText($@);
-            return;
+    # don't start process thread if config is not valid
+    eval {
+        # this will throw errors if config is not valid
+        my $config = $self->config;
+        if ($Slic3r::GUI::Settings->{_}{threads}) {
+            $config->set('threads', $Slic3r::GUI::Settings->{_}{threads});
         }
+        $config->validate;
+        $self->{print}->apply_config($config);
+        $self->{print}->validate;
+    };
+    if ($@) {
+        $self->statusbar->SetStatusText($@);
+        return;
     }
-    
-    if ($Slic3r::GUI::Settings->{_}{threads}) {
-        $self->{print}->config->set('threads', $Slic3r::GUI::Settings->{_}{threads});
-    }
-    
+
     # start thread
     @_ = ();
     $self->{process_thread} = Slic3r::spawn_thread(sub {
@@ -1996,18 +2041,19 @@ sub resume_background_process {
 }
 
 
-sub export_tilt_gcode {
+sub start_tilt_process {
     my ($self) = @_;
 
-    $TILT_GCODE = 1;
+    if (!(scalar @{$self->{model}->objects})){
+        return 0;
+    }
 
     my $config = $self->config;
-    $config->set('complete_objects', 1);
     eval {
+        $config->set('complete_objects', 1);
         $config->validate;
     };
 
-    $self->{tilt_model} //= Slic3r::Model->new;
     $self->{tilt_model}->clear_objects;
     $self->{tilt_model}->add_object($self->{model}->objects->[0]);
 
@@ -2016,27 +2062,22 @@ sub export_tilt_gcode {
         _config => $config,
     ); 
 
-    $self->{tilt_model} = $self->{bed_tilt}->process_bed_tilt;
-    if ($self->{tilt_model}){
-        $self->{print}->clear_objects;
-        for my $object (@{$self->{tilt_model}->objects}){
-            $self->{print}->add_model_object($object);
-        }
-
-        $config->set('skirts', 1);
-        $config->set('print_tilt', 1);
-        $config->set('initial_z_tilt', 10.0);
-
-        eval {
-            # this will throw errors if config is not valid
-            $config->validate;
-            $self->{print}->apply_config($config);
-            $self->{print}->validate;
-        };
-        $self->export_gcode;
+    my ($result_model, $view_model) = $self->{bed_tilt}->process_bed_tilt;
+    $self->{tilt_processed} = 1;
+    print "ON MODEL CHANGE\n";
+    print Dumper(scalar @{$result_model->objects});
+    $self->{tilt_model}->clear_objects;
+    $self->{view_tilt_model}->clear_objects;
+    for my $object (@{$view_model->objects}){
+        $self->{view_tilt_model}->add_object($object);
     }
+    for my $object (@{$result_model->objects}){
+        $self->{tilt_model}->add_object($object);
+        $self->{tilt_print}->add_model_object($object);
+    }
+    $self->on_model_change;
 
-    return;
+    return 1;
 }
 
 sub export_gcode {
@@ -2051,25 +2092,18 @@ sub export_gcode {
     
     # if process is not running, validate config
     # (we assume that if it is running, config is valid)
+    
+
+    # apply config and validate print
+    my $config = $self->config;
     eval {
         # this will throw errors if config is not valid
-        $self->config->validate;
-        print "PRINT VALIDATE\n";
-        print Dumper($self->{print});
+        $config->validate;
+        $self->{print}->apply_config($config);
         $self->{print}->validate;
     };
+
     Slic3r::GUI::catch_error($self) and return;
-    
-    if (!$TILT_GCODE){
-        # apply config and validate print
-        my $config = $self->config;
-        eval {
-            # this will throw errors if config is not valid
-            $config->validate;
-            $self->{print}->apply_config($config);
-            $self->{print}->validate;
-        };
-    }
 
 
     if (!$Slic3r::have_threads) {
@@ -2154,7 +2188,6 @@ sub on_process_completed {
         
         # workaround for "Attempt to free un referenced scalar..."
         our $_thread_self = $self;
-        
         $self->{export_thread} = Slic3r::spawn_thread(sub {
             eval {
                 $_thread_self->{print}->export_gcode(output_file => $_thread_self->{export_gcode_output_file});
@@ -2182,12 +2215,6 @@ sub on_progress_event {
 # This gets called also if we don't have threads.
 sub on_export_completed {
     my ($self, $result) = @_;
-
-    # if (!@prints){
-    #     print "print empty\n";
-    #     $TILT_GCODE = 0;
-    # }
-    
     $self->statusbar->SetCancelCallback(undef);
     $self->statusbar->StopBusy;
     $self->statusbar->SetStatusText("");
@@ -2195,7 +2222,6 @@ sub on_export_completed {
     Slic3r::debugf "Background export process completed.\n";
     $self->{export_thread}->detach if $self->{export_thread};
     $self->{export_thread} = undef;
-    
     my $message;
     my $send_gcode = 0;
     my $do_print = 0;
@@ -2215,11 +2241,10 @@ sub on_export_completed {
     $self->{export_gcode_output_file} = undef;
     $self->statusbar->SetStatusText($message);
     wxTheApp->notify($message);
-    
     $self->do_print if $do_print;
     $self->send_gcode if $send_gcode;
-    $self->{print_file} = undef;
     $self->{send_gcode_file} = undef;
+    $self->{print_file} = undef;
     
     {
         my $fil = sprintf(
@@ -2236,14 +2261,9 @@ sub on_export_completed {
         $self->{print_info_fil}->SetLabel($fil);
         $self->{print_info_cost}->SetLabel($cost);
     }
-    
+
     # this updates buttons status
     $self->object_list_changed;
-    # if ($TILT_GCODE and scalar @prints > 0){
-    #     $self->{print} = shift @prints;
-    #     my $print_name = shift @prints_name;
-    #     $self->export_gcode($print_name);
-    # }
 }
 
 sub do_print {
@@ -2939,6 +2959,7 @@ sub refresh_canvases {
     
     $self->{canvas}->Refresh;
     $self->{canvas3D}->update if $self->{canvas3D};
+    $self->{tilt3D}->update if $self->{tilt3D};
     $self->{preview3D}->reload_print if $self->{preview3D};
 }
 
@@ -3091,7 +3112,7 @@ sub select_view {
     }
 }
 
-sub zoom{
+sub zoom {
     my ($self, $direction) = @_;
     #Apply Zoom to the current active tab
     my ($currentSelection) = $self->{preview_notebook}->GetSelection;
@@ -3099,9 +3120,11 @@ sub zoom{
         $self->{canvas3D}->zoom($direction) if($self->{canvas3D});
     }
     elsif($currentSelection == 2){ #3d Preview tab
+        print "CURRENT SELECTION 3D\n";
         $self->{preview3D}->canvas->zoom($direction) if($self->{preview3D});
     }
     elsif($currentSelection == 3) { #2D toolpaths tab
+    print "CURRENT SELECTION 2D\n";
         $self->{toolpaths2D}->{canvas}->zoom($direction) if($self->{toolpaths2D});
     }
 }

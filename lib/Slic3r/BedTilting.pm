@@ -23,6 +23,7 @@ our $BED_HEIGHT = 200.0;
 our $TILT_GCODE = 1;
 our $print;
 our $model;
+our $view_model;
 our %tilt_angles;
 our @tilt_cuts_array;
 our %tilt_levels;
@@ -32,6 +33,7 @@ sub clean_values {
     my ($self) = @_;
     undef $print;
     undef $model;
+    undef $view_model;
     undef %tilt_angles;
     undef @tilt_cuts_array;
     undef %tilt_levels;
@@ -54,14 +56,19 @@ sub process_bed_tilt {
     }
 
     my $origin_offset = $self->{config}->get('origin_offset');
+
     #Stores the model
 
     #MAKE SURE TO USE COPY
 
     $model = Slic3r::Model->new;
     $model->add_object($self->_model->objects->[0]);
+
+    $view_model = Slic3r::Model->new;
+
     my $original_model_object = $model->objects->[0];
     my $object_pos = $self->{config}->get('stl_initial_position');
+
     my $model_offset = Slic3r::Pointf->new($origin_offset->x, $origin_offset->y);
 
     $TILT_GCODE = 1;
@@ -91,6 +98,8 @@ sub process_bed_tilt {
     #Apply config and validate print of the original model
     my $config = $self->{config};
     $config->set('support_material', 1);
+
+
     eval {
         # this will throw errors if config is not valid
         $config->validate;
@@ -114,7 +123,7 @@ sub process_bed_tilt {
         #Should contain (TILT_LEVEL, ANGLEXZ, ANGLEYZ, ANGLEZX, ANGLEZY)
         print "RESULT PLATER @result\n";
         my $last_id = scalar @{$model->objects} - 1;
-
+        my $last_view_id = scalar @{$view_model->objects};
         my $tilt_cut = shift @result;
         push @tilt_cuts_array, $tilt_cut;
         my @angles = @result;
@@ -189,28 +198,48 @@ sub process_bed_tilt {
         my $new_model = $current_model_object->cut(Z, $tilt_cut);
 
         my ($upper_object, $lower_object) = @{$new_model->objects};
+        print "$last_view_id \n";
+
+        $view_model->delete_object($last_view_id) if $last_view_id > 0;
+
+        $view_model->add_object($lower_object);
+        $view_model->add_object($upper_object);
+
+        $view_model->objects->[$last_view_id]->rotate3D(- $angleyz + $anglezy, - $anglezx + $anglexz, 0,1);
+        $view_model->objects->[$last_view_id + 1]->rotate3D(- $angleyz + $anglezy, - $anglezx + $anglexz, 0,1);
 
         $model->delete_object($last_id);
 
         $model->add_object($lower_object);
 
-        $lower_object = $model->objects->[$last_id];
+        print Dumper($lower_object);
+        print Dumper($model->objects->[$last_id]);
+        print Dumper($view_model->objects->[$last_view_id]);
 
         print "ROTATION YZ -$angleyz $anglezy ZX -$anglezx $anglexz\n";
-        $lower_object->rotate3D(- $angleyz + $anglezy, - $anglezx + $anglexz, 0,1);
+        $model->objects->[$last_id]->rotate3D(- $angleyz + $anglezy, - $anglezx + $anglexz, 0,1);
 
-        $bb_mod = $lower_object->bounding_box;
+        $bb_mod = $model->objects->[$last_id]->bounding_box;
 
         $model->add_object($upper_object);
-        $upper_object = $model->objects->[$last_id + 1];
-        $bb_mod = $upper_object->bounding_box;
-
+        $bb_mod = $model->objects->[$last_id + 1]->bounding_box;
 
 
         $z_translation = Slic3r::Pointf3->new(0, 0 , $origin_offset->z);
         $model->objects->[$last_id + 1]->translate(@$z_translation);
         $model->objects->[$last_id]->translate(@$z_translation);
         $tilt_levels{$tilt_cuts_array[$iter_result]} = [ @levels ];
+
+
+        my $z_view_translation = Slic3r::Pointf3->new(0, 0 , $origin_offset->z + 5);
+        if ($last_view_id == 0){
+            $view_model->objects->[$last_view_id]->translate(@$z_translation);
+            $view_model->objects->[$last_view_id + 1]->translate(@$z_view_translation);
+        }
+        else {
+            $view_model->objects->[$last_view_id + 1]->translate(@$z_view_translation);
+            $view_model->objects->[$last_view_id]->translate(@$z_view_translation);
+        }
 
 
 
@@ -249,7 +278,7 @@ sub process_bed_tilt {
     }
     $retry = 0;
     # return $print;
-    return $model;
+    return ($model, $view_model);
 }
 
 sub compute_tilts {

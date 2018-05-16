@@ -100,7 +100,10 @@ my $paused = 0;
 
 sub spawn_thread {
     my ($cb) = @_;
-    
+    print "SPAWN THREAD\n";
+    # use Devel::StackTrace;
+    # my $trace = Devel::StackTrace->new;
+    # print $trace->as_string;
     my $parent_tid = threads->tid;
     lock @threads;
     

@@ -152,7 +152,7 @@ sub as_ini {
 # objects because it performs cross checks
 sub validate {
     my $self = shift;
-    
+
     # -j, --threads
     die "Invalid value for --threads\n"
         if $self->threads < 1;
@@ -162,7 +162,7 @@ sub validate {
         if $self->layer_height <= 0;
     die "--layer-height must be a multiple of print resolution\n"
         if $self->layer_height / &Slic3r::SCALING_FACTOR % 1 != 0;
-    
+
     # --first-layer-height
     die "Invalid value for --first-layer-height\n"
         if $self->first_layer_height !~ /^(?:\d*(?:\.\d+)?)%?$/;
@@ -172,7 +172,7 @@ sub validate {
     # --filament-diameter
     die "Invalid value for --filament-diameter\n"
         if grep $_ < 1, @{$self->filament_diameter};
-    
+
     # --nozzle-diameter
     die "Invalid value for --nozzle-diameter\n"
         if grep $_ < 0, @{$self->nozzle_diameter};
@@ -180,7 +180,7 @@ sub validate {
     # --perimeters
     die "Invalid value for --perimeters\n"
         if $self->perimeters < 0;
-    
+
     # --solid-layers
     die "Invalid value for --solid-layers\n" if defined $self->solid_layers && $self->solid_layers < 0;
     die "Invalid value for --top-solid-layers\n"    if $self->top_solid_layers      < 0;
@@ -189,7 +189,7 @@ sub validate {
     # --gcode-flavor
     die "Invalid value for --gcode-flavor\n"
         if !first { $_ eq $self->gcode_flavor } @{$Options->{gcode_flavor}{values}};
-    
+
     die "--use-firmware-retraction is only supported by Marlin, Smoothie, Repetier and Machinekit firmware\n"
         if $self->use_firmware_retraction && $self->gcode_flavor ne 'smoothie' 
         && $self->gcode_flavor ne 'reprap' 
@@ -198,7 +198,7 @@ sub validate {
     
     die "--use-firmware-retraction is not compatible with --wipe\n"
         if $self->use_firmware_retraction && first {$_} @{$self->wipe};
-    
+
     # --fill-pattern
     die "Invalid value for --fill-pattern\n"
         if !first { $_ eq $self->fill_pattern } @{$Options->{fill_pattern}{values}};
@@ -217,7 +217,7 @@ sub validate {
     # --infill-every-layers
     die "Invalid value for --infill-every-layers\n"
         if $self->infill_every_layers !~ /^\d+$/ || $self->infill_every_layers < 1;
-    
+
     # --skirt-height
     die "Invalid value for --skirt-height\n"
         if $self->skirt_height < -1;  # -1 means as tall as the object
@@ -231,7 +231,7 @@ sub validate {
         if $self->extruder_clearance_radius <= 0;
     die "Invalid value for --extruder-clearance-height\n"
         if $self->extruder_clearance_height <= 0;
-    
+
     # --extrusion-multiplier
     die "Invalid value for --extrusion-multiplier\n"
         if defined first { $_ <= 0 } @{$self->extrusion_multiplier};
@@ -269,7 +269,7 @@ sub validate {
                 map $self->get_abs_value_over("${_}_extrusion_width", $max_nozzle_diameter),
                 qw(perimeter infill solid_infill top_infill support_material first_layer);
     }
-    
+
     
     # general validation, quick and dirty
     foreach my $opt_key (@{$self->get_keys}) {

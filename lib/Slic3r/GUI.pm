@@ -36,6 +36,7 @@ use Slic3r::GUI::Plater;
 use Slic3r::GUI::Plater::2D;
 use Slic3r::GUI::Plater::2DToolpaths;
 use Slic3r::GUI::Plater::3D;
+use Slic3r::GUI::Plater::Tilt3D;
 use Slic3r::GUI::Plater::3DPreview;
 use Slic3r::GUI::Plater::ObjectPartsPanel;
 use Slic3r::GUI::Plater::ObjectCutDialog;
