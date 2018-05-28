@@ -1217,10 +1217,7 @@ sub options {
         retract_length_toolchange retract_restart_extra_toolchange retract_lift_above retract_lift_below
         printer_settings_id
         printer_notes
-        origin_offset
-        stl_initial_position
-        initial_z_tilt
-        max_angle
+        origin_offset stl_initial_position initial_z_tilt max_angle bed_total_dim
     );
 }
 
@@ -1246,6 +1243,9 @@ sub build {
             $optgroup->append_single_option_line('stl_initial_position');
             $optgroup->append_single_option_line('initial_z_tilt');
             $optgroup->append_single_option_line('max_angle');
+            $optgroup->append_single_option_line('bed_total_dim');
+
+
 
             $optgroup->on_change(sub {
                 my ($opt_id) = @_;

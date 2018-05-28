@@ -212,7 +212,7 @@ sub new {
                     $self->{preview3D}->load_print if $sel == $self->{preview3D_page_idx};
                 }
             } elsif ($sel == $self->{tilt3D_page_idx}) {
-                if (!$self->{tilt_processed}){
+                if (!(scalar @{$self->{tilt_print}->objects})){
                     $self->start_tilt_process;
                 }
             }
@@ -1964,13 +1964,15 @@ sub start_background_process {
             $config->set('threads', $Slic3r::GUI::Settings->{_}{threads});
         }
         $config->validate;
-        $self->{print}->apply_config($config);
+        $self->{print}->apply_config($config) if (!$self->{temp_print});
         $self->{print}->validate;
     };
     if ($@) {
         $self->statusbar->SetStatusText($@);
         return;
     }
+    print "BACKGROUND PROCESS\n";
+    print Dumper($self->{print}->config->get('print_tilt'), $self->{temp_print});
 
     # start thread
     @_ = ();
@@ -2039,6 +2041,38 @@ sub resume_background_process {
     }
 }
 
+sub tilt_update {
+    my ($self) = @_;
+    
+    $self->{tilt_model}->clear_objects;
+    $self->{tilt_print}->clear_objects;
+    $self->{view_tilt_model}->clear_objects;
+    $self->{tilt3D}->update;
+    $self->{tilt_processed} = 0;
+}
+
+sub invalidate_tilt {
+    my ($self) = @_;
+
+    if ($self->{temp_print}){
+        $self->{print} = $self->{temp_print};
+        $self->{temp_print} = undef;
+    }
+
+    $self->{tilt_processing} = 0;
+    $self->{tilt_processed} = 0;
+}
+
+sub tilt_into_print {
+    my ($self) = @_;
+
+    if (!$self->{temp_print} && $self->{tilt_processing}){
+        $self->{temp_print} = $self->{print};
+        $self->{print} = $self->{tilt_print};
+        $self->{tilt_processing} = 0;
+    }
+}
+
 
 sub start_tilt_process {
     my ($self) = @_;
@@ -2047,11 +2081,9 @@ sub start_tilt_process {
         return 0;
     }
 
+    $self->statusbar->SetStatusText("Tilt process begun");
+
     my $config = $self->config;
-    eval {
-        $config->set('complete_objects', 1);
-        $config->validate;
-    };
 
     $self->{tilt_model}->clear_objects;
     $self->{tilt_model}->add_object($self->{model}->objects->[0]);
@@ -2064,8 +2096,13 @@ sub start_tilt_process {
     my ($result_model, $view_model) = $self->{bed_tilt}->process_bed_tilt;
 
     if (!$result_model){
+        $self->statusbar->SetStatusText("Error during the tilting process");
+        $self->invalidate_tilt;
         return 0;
     }
+
+    $self->statusbar->SetStatusText("Tilting process finished");
+
 
     $self->{tilt_processed} = 1;
     print "ON MODEL CHANGE\n";
@@ -2080,7 +2117,21 @@ sub start_tilt_process {
         $self->{tilt_print}->add_model_object($object);
         push @{ $self->{tilt_objects} }, $object;
     }
-    
+    eval {
+        $config->set('complete_objects', 1);
+        $config->validate;
+    };
+    $config->set('skirts', 2);
+    $config->set('print_tilt', 1);
+    $config->set('initial_z_tilt', 10.0);
+
+    $config->validate;
+
+    $self->{tilt_print}->apply_config($config);
+
+    print "CONFIG PRINT TILT\n";
+    print Dumper($self->{tilt_print}->config->get('print_tilt'));
+
     $self->{tilt3D}->update;
 
     return 1;
@@ -2100,25 +2151,22 @@ sub export_gcode {
         $self->{tilt_processing} = 0;
         return 0 if ($self->start_tilt_process);
     }
-    if (!$self->{temp_print} && $self->{tilt_processing}){
-        $self->{temp_print} = $self->{print};
-        $self->{print} = $self->{tilt_print};
-        $self->{tilt_processing} = 0;
-    }
+
+    $self->tilt_into_print;
     
     # if process is not running, validate config
     # (we assume that if it is running, config is valid)
     
-
+    if (!$self->{temp_print}){
     # apply config and validate print
-    my $config = $self->config;
-    eval {
-        # this will throw errors if config is not valid
-        $config->validate;
-        $self->{print}->apply_config($config);
-        $self->{print}->validate;
-    };
-
+        my $config = $self->config;
+        eval {
+            # this will throw errors if config is not valid
+            $config->validate;
+            $self->{print}->apply_config($config);
+            $self->{print}->validate;
+        };
+    }
     Slic3r::GUI::catch_error($self) and return;
 
 
@@ -2657,16 +2705,6 @@ sub on_model_change {
     } else {
         $self->hide_preview;
     }
-}
-
-sub tilt_update {
-    my ($self) = @_;
-    
-    $self->{tilt_model}->clear_objects;
-    $self->{tilt_print}->clear_objects;
-    $self->{view_tilt_model}->clear_objects;
-    $self->{tilt3D}->update;
-    $self->{tilt_processed} = 0;
 }
 
 sub hide_preview {

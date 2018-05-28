@@ -327,8 +327,7 @@ sub contact_area {
                 }
                 push @contact, @$diff;
                 if ( defined $tilt ){
-                    print "Support, tilt $tilt\n";
-                    return (0,$layerm, $diff, @contact, @overhang);
+                    return (1, $layerm, @contact, @overhang);
                 }
             }
         }

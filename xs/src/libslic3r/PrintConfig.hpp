@@ -357,6 +357,7 @@ class GCodeConfig : public virtual StaticPrintConfig
     ConfigOptionFloat               initial_z_tilt;
     ConfigOptionPoint3              origin_offset;
     ConfigOptionFloat               max_angle;
+    ConfigOptionPoint3              bed_total_dim;
     ConfigOptionPoint3              stl_initial_position;
 
     
@@ -404,6 +405,7 @@ class GCodeConfig : public virtual StaticPrintConfig
         OPT_PTR(initial_z_tilt);
         OPT_PTR(origin_offset);
         OPT_PTR(max_angle);
+        OPT_PTR(bed_total_dim);
         OPT_PTR(stl_initial_position);
 
         

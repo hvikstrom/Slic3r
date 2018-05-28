@@ -1387,13 +1387,19 @@ PrintConfigDef::PrintConfigDef()
     def->label = "Origin offset";
     def->tooltip = "Origin's location in extruder's coordinate system";
     def->cli = "origin-offset";
-    def->default_value = new ConfigOptionPoint3(Pointf3(-16.1,-37.3,-19.0));
+    def->default_value = new ConfigOptionPoint3(Pointf3(-27.8,-54.5,-19.0));
 
     def = this->add("stl_initial_position", coPoint3);
     def->label = "STL initial position";
     def->tooltip = "Object's position in its STL";
     def->cli = "stl-initial-position";
-    def->default_value = new ConfigOptionPoint3(Pointf3(616.1, 87.3, 0));
+    def->default_value = new ConfigOptionPoint3(Pointf3(600.0, 60.0, 0.0));
+
+    def = this->add("bed_total_dim", coPoint3);
+    def->label = "Real dimensions of the bed";
+    def->tooltip = "Real dimensions of the bed";
+    def->cli = "bed-total-dim";
+    def->default_value = new ConfigOptionPoint3(Pointf3(770.0,504.0,200.0));
 
     def = this->add("max_angle", coFloat);
     def->label = "V groove maximal distance";

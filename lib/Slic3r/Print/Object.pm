@@ -10,6 +10,9 @@ use Slic3r::Geometry::Clipper qw(diff diff_ex intersection intersection_ex union
     offset offset_ex offset2 offset2_ex intersection_ppl CLIPPER_OFFSET_SCALE JT_MITER);
 use Slic3r::Print::State ':steps';
 use Slic3r::Surface ':types';
+use Math::Trig;
+use Data::Dumper;
+
 
 
 # TODO: lazy
@@ -46,7 +49,6 @@ sub slice {
     my $self = shift;
     
     return if $self->step_done(STEP_SLICE);
-    print "SLICE STARTED\n";
     $self->set_step_started(STEP_SLICE);
     $self->print->status_cb->(10, "Processing triangulated mesh");
 
@@ -266,26 +268,25 @@ sub tilt {
     #Prerequisite
     $self->slice;
 
-    my $error_margin = -0.1;
-
     #Making sure that no support layers has been applied 
     if ($self->step_done(STEP_SUPPORTMATERIAL)){
         $self->clear_support_layers;
     }
 
-    print "OBJECT\n";
-    print $self->config->get('support_material');
-
     #Create a special instance of support_material for the tilt
     my $support_material = $self->_support_material(tilt => 1);
     
     #If a tilt is needed, $tilt should contain 0, check contact_area code for more details
-    my ($tilt, $layerm, $diff, $contact, $overhang) = $support_material->contact_area($self, tilt => 1);
+    my ($tilt, $layerm, $contact, $overhang) = $support_material->contact_area($self, tilt => 1);
+    # use Data::Dumper;
+    # print Dumper($tilt, $layerm, $contact, $overhang);
+    # print Dumper($overhang->wkt) if (defined $overhang);
+    # print Dumper($contact->wkt) if (defined $contact);
 
-    if (!$tilt) {
+    if ($tilt == 1) {
         my $layer = $layerm->layer;
         my $lower_layer = $layer->lower_layer;
-        my $lower_print_z = $lower_layer->print_z;
+        my $print_z = $lower_layer->print_z;
         my $height = $layer->height;
         my $fw = $layerm->flow(FLOW_ROLE_EXTERNAL_PERIMETER)->scaled_width;
         my $conf = $self->config;
@@ -294,90 +295,41 @@ sub tilt {
         my ($over_min_x, $over_max_x, $over_min_y, $over_max_y) = $self->find_extreme_points($layer->slices->polygons);
 
         my ($min_x, $max_x, $min_y, $max_y) = $self->find_extreme_points($lower_layer->slices->polygons);
-        my $index = 0;
-        # while ($layer){
-        #     print "LAYER $index\n";
-        #     $self->find_extreme_points($layer->slices->polygons);
-        #     $layer = $layer->lower_layer;
-        #     $index += 1;
-        # }
 
-        print "EXTREME POINTS\n";
-        use Data::Dumper;
-        print Dumper($min_x, $max_x, $min_y, $max_y, $over_min_x, $over_max_x, $over_min_y, $over_max_y);
+        # print "LOWER / UPPER\n";
+        # map {print Dumper($_->wkt)} @{$lower_layer->slices->polygons};
+        # map {print Dumper($_->wkt)} @{$layer->slices->polygons};
+        # print "EXTREME POINTS\n";
+        # use Data::Dumper;
+        # print Dumper($min_x, $max_x, $min_y, $max_y, $over_min_x, $over_max_x, $over_min_y, $over_max_y);
 
-        if ($min_x < $error_margin or $max_x < $error_margin or 
-            $min_y < $error_margin or $max_y < $error_margin or 
-            $over_min_x < $error_margin or $over_max_x < $error_margin or 
-            $over_min_y < $error_margin or $over_max_y < $error_margin
-            ){
-
-            print "WARNING NEGATIVE VALUE\n";
-            
-            return -1;
-        }
-
-        use Math::Trig;
         my $anglexz;
         my $angleyz;
         my $anglezx;
         my $anglezy;
         my $angled;
-        $angled = atan(unscale $d / $height);
-        my $print_z = 0;
 
         #CANNOT DO ZX AND XZ / ZY AND YZ at the same time
 
-        print Dumper(unscale $d);
-        if ($over_max_x > $max_x && abs($over_max_x - $max_x) > unscale $d){
+        if ($over_max_x > $max_x){
             print "Need tilt x->z\n";
             $anglexz = atan(abs($over_max_x - $max_x) / $height);
-            $anglexz -= $angled;
             print "Angle : $anglexz radians\n";
-            print Dumper($max_x, $over_max_x, $d, unscale $d, $height);
-            $print_z = $self->rotate3D_z($max_x, 0, $lower_print_z, 0, -$anglexz);
         }
-        else {
-            $max_x = 0;
-            $anglexz = 0;
-        }
-        if ($over_max_y > $max_y && abs($over_max_y - $max_y) > unscale $d){
+        if ($over_max_y > $max_y){
             print "Need tilt y->z\n";
             $angleyz = atan(abs($over_max_y - $max_y) / $height);
-            $angleyz -= $angled;
             print "Angle : $angleyz radians\n";
-            $print_z = $self->rotate3D_z($max_x, $max_y, $lower_print_z, $angleyz, -$anglexz);
-            print Dumper($print_z);
         }
-        else {
-            $max_y = 0;
-            $angleyz = 0;
-        }
-        if ($over_min_x < $min_x && abs($over_min_x - $min_x) > unscale $d){
+        if ($over_min_x < $min_x){
             print "Need tilt z->x\n";
             $anglezx = atan(abs($over_min_x - $min_x) / $height);
-            $anglezx -= $angled;
             print "Angle : $anglezx radians\n";
-            $print_z = $self->rotate3D_z($min_x, $max_y, $lower_print_z, $angleyz, $anglezx);
-            print Dumper($print_z);
         }
-        else {
-            $min_x = 0;
-            $anglezx = 0;
-        }
-        if ($over_min_y < $min_y && abs($over_min_y - $min_y) > unscale $d){
+        if ($over_min_y < $min_y){
             print "Need tilt z->y\n";
             $anglezy = atan(abs($over_min_y - $min_y)/ $height);
-            $anglezy -= $angled;
             print "Angle : $anglezy radians\n";
-            if ($anglezx){
-                $print_z = $self->rotate3D_z($min_x, $min_y, $lower_print_z, -$anglezy, $anglezx);
-                print Dumper($print_z);
-            }
-            else {
-                $print_z = $self->rotate3D_z($max_x, $min_y, $lower_print_z, -$anglezy, -$anglexz);
-                print Dumper($print_z);
-            }
         }
 
 
@@ -387,8 +339,12 @@ sub tilt {
         $anglezx //= 0;
         $anglezy //= 0;
 
+        my @angles = ($anglexz, $angleyz, $anglezx, $anglezy);
+
         print "Support needed for $layerm, $print_z when rotated, $height \n";
-        return ($print_z, $anglexz, $angleyz, $anglezx, $anglezy) unless (!$anglexz and !$angleyz and !$anglezx and !$anglezy);
+        if (any { $_ != 0 } @angles) {
+            return ($print_z, @angles);
+        }
         return 0;
     }
     else {

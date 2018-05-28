@@ -17,7 +17,7 @@ uz = -float(sys.argv[1])
 zz = -float(sys.argv[2])
 vz = -float(sys.argv[3])
 A = float(sys.argv[4])
-C = float(sys.argv[5])
+B = float(sys.argv[5])
 
 
 def norme(x,y):
@@ -30,7 +30,6 @@ def myFunction(z):
 	vy = z[3]
 	zy = z[4]
 
-	B = sqrt(C**2.0 - (A/2.0)**2.0)
 	phi = radians(26)#atan((B / 3.0) / ( A / 2.0 ))
 	zx = A / 2.0
 
