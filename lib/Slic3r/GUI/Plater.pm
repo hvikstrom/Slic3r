@@ -212,7 +212,7 @@ sub new {
                     $self->{preview3D}->load_print if $sel == $self->{preview3D_page_idx};
                 }
             } elsif ($sel == $self->{tilt3D_page_idx}) {
-                if (!(scalar @{$self->{tilt_print}->objects})){
+                if (!(scalar @{$self->{tilt_print}->objects}) && !$self->{tilt_processed}){
                     $self->start_tilt_process;
                 }
             }
@@ -301,10 +301,7 @@ sub new {
     $self->selection_changed(0);
     $self->object_list_changed;
     EVT_BUTTON($self, $self->{btn_export_gcode}, sub {
-        if ($self->{temp_print}){
-            $self->{print} = $self->{temp_print};
-            $self->{temp_print} = undef;
-        }
+        $self->{tilt_processing} = 0;
         $self->export_gcode;
     });
     EVT_BUTTON($self, $self->{btn_export_tilt_gcode}, sub {
@@ -1399,6 +1396,12 @@ sub remove {
     my ($obj_idx, $dont_push) = @_;
     
     $self->stop_background_process;
+
+    if ($self->{temp_print}){
+        $self->{print} = $self->{temp_print};
+        $self->{temp_print} = undef;
+        $self->{tilt_processed} = 0;
+    }
     
     # Prevent toolpaths preview from rendering while we modify the Print object
     $self->{toolpaths2D}->enabled(0) if $self->{toolpaths2D};
@@ -2051,29 +2054,6 @@ sub tilt_update {
     $self->{tilt_processed} = 0;
 }
 
-sub invalidate_tilt {
-    my ($self) = @_;
-
-    if ($self->{temp_print}){
-        $self->{print} = $self->{temp_print};
-        $self->{temp_print} = undef;
-    }
-
-    $self->{tilt_processing} = 0;
-    $self->{tilt_processed} = 0;
-}
-
-sub tilt_into_print {
-    my ($self) = @_;
-
-    if (!$self->{temp_print} && $self->{tilt_processing}){
-        $self->{temp_print} = $self->{print};
-        $self->{print} = $self->{tilt_print};
-        $self->{tilt_processing} = 0;
-    }
-}
-
-
 sub start_tilt_process {
     my ($self) = @_;
 
@@ -2147,13 +2127,18 @@ sub export_gcode {
         return;
     }
 
-    if (!$self->{tilt_processed} && $self->{tilt_processing}){
-        $self->{tilt_processing} = 0;
-        return 0 if ($self->start_tilt_process);
+    if (!$self->{tilt_processing} && $self->{temp_print}){
+        $self->{print} = $self->{temp_print};
+        $self->{temp_print} = undef;
     }
 
-    $self->tilt_into_print;
-    
+    if (!$self->{tilt_processed} && $self->{tilt_processing}){
+        $self->{tilt_processing} = 0;
+        return 0 if (!$self->start_tilt_process);
+        $self->{temp_print} = $self->{print};
+        $self->{print} = $self->{tilt_print};
+    }
+
     # if process is not running, validate config
     # (we assume that if it is running, config is valid)
     
