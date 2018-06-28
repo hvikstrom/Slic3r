@@ -8,7 +8,7 @@ use utf8;
 
 use POSIX qw(ceil);
 use Scalar::Util qw(looks_like_number);
-use Slic3r::Geometry qw(PI X Y Z);
+use Slic3r::Geometry qw(PI X Y Z deg2rad);
 use Wx qw(wxTheApp :dialog :id :misc :sizer wxTAB_TRAVERSAL);
 use Wx::Event qw(EVT_CLOSE EVT_BUTTON);
 use base 'Wx::Dialog';
@@ -25,9 +25,18 @@ sub new {
     $self->{mesh_cut_valid} = 0;
     # Note whether the window was already closed, so a pending update is not executed.
     $self->{already_closed} = 0;
-    
+
     $self->{model_object}->transform_by_instance($self->{model_object}->get_instance(0), 1);
     
+
+    $self->{tilt_cut} = 0;
+    $self->{tilt_angle} = {
+        XZ  => 0,
+        YZ  => 0,
+        ZX  => 0,
+        ZY  => 0,
+    };
+    $self->{tilt_data} = 0;
     # cut options
     my $size_z = $self->{model_object}->instance_bounding_box(0)->size->z;
     $self->{cut_options} = {
@@ -119,6 +128,11 @@ sub new {
         $self->{btn_cut_grid} = Wx::Button->new($self, -1, "Cut by grid…", wxDefaultPosition, wxDefaultSize);
         $cut_button_sizer->Add($self->{btn_cut_grid}, 0, wxALIGN_RIGHT | wxALL, 10);
         
+        $self->{btn_rotate} = Wx::Button->new($self, -1, "Rotate", wxDefaultPosition, wxDefaultSize);
+        $self->{btn_rotate}->SetDefault;
+        $cut_button_sizer->Add($self->{btn_rotate}, 0, wxALIGN_RIGHT | wxALL, 10);
+        
+
         $optgroup->append_line(Slic3r::GUI::OptionsGroup::Line->new(
             sizer => $cut_button_sizer,
         ));
@@ -146,20 +160,47 @@ sub new {
     $self->SetSizer($self->{sizer});
     $self->SetMinSize($self->GetSize);
     $self->{sizer}->SetSizeHints($self);
+
+    EVT_BUTTON($self, $self->{btn_rotate}, sub {
+        $self->{model_object}->rotate3D(deg2rad(26), 0, 0, 0);
+        print "OBJECT CUT DIALOG\n";
+        my $bb_mod = $self->{model_object}->bounding_box;
+        $self->print_dumper($bb_mod);
+        $self->{tilt_angle}{YZ} = deg2rad(26);
+        $self->_update;
+        $self->{model_object}->center_around_origin;  # align to Z = 0
+        $self->{tilt_cut} = 1;
+    });
     
     EVT_BUTTON($self, $self->{btn_cut}, sub {
         # Recalculate the cut if the preview was not active.
         $self->_perform_cut() unless $self->{mesh_cut_valid};
 
-        # Adjust position / orientation of the split object halves.
-        if (my $lower = $self->{new_model_objects}[0]) {
-            if ($self->{cut_options}{rotate_lower} && $self->{cut_options}{axis} == Z) {
-                $lower->rotate(PI, X);
+        if (!$self->{tilt_cut}){
+            # Adjust position / orientation of the split object halves.
+            if (my $lower = $self->{new_model_objects}[0]) {
+                if ($self->{cut_options}{rotate_lower} && $self->{cut_options}{axis} == Z) {
+                    $lower->rotate(PI, X);
+                }
+                $lower->center_around_origin;  # align to Z = 0
             }
-            $lower->center_around_origin;  # align to Z = 0
+            if (my $upper = $self->{new_model_objects}[1]) {
+                $upper->center_around_origin;  # align to Z = 0
+            }
         }
-        if (my $upper = $self->{new_model_objects}[1]) {
-            $upper->center_around_origin;  # align to Z = 0
+        else {
+            my $bb_mod;
+            if (my $lower = $self->{new_model_objects}[0]) {
+                $lower->rotate3D(deg2rad(-26), 0, 0, 1);;
+                $bb_mod = $lower->bounding_box;
+                print "lower\n";
+                $self->print_dumper($bb_mod);
+            }
+            if (my $upper = $self->{new_model_objects}[1]) {
+                print "upper\n";
+                $bb_mod = $upper->bounding_box;
+                $self->print_dumper($bb_mod);
+            }
         }
         
         # Note that the window was already closed, so a pending update will not be executed.
@@ -221,6 +262,17 @@ sub new {
     $self->_update;
     
     return $self;
+}
+
+sub print_dumper {
+    my ($self, $bb_mod) = @_;
+    use Data::Dumper;
+    print Dumper($bb_mod->x_min);
+    print Dumper($bb_mod->x_max);
+    print Dumper($bb_mod->y_min);
+    print Dumper($bb_mod->y_max);
+    print Dumper($bb_mod->z_min);
+    print Dumper($bb_mod->z_max);
 }
 
 # scale Z down to original size since we're using the transformed mesh for 3D preview
@@ -363,6 +415,20 @@ sub _update {
 sub NewModelObjects {
     my ($self) = @_;
     return grep defined, @{ $self->{new_model_objects} };
+}
+
+sub tilt_cut {
+    my ($self) = @_;
+    return $self->{tilt_cut};
+}
+
+sub tilt_data {
+    my ($self) = @_;
+    $self->{tilt_data} = {
+        cut     => $self->{cut_options}{z},
+        angles  => $self->{tilt_angle},
+    };
+    return $self->{tilt_data};
 }
 
 1;

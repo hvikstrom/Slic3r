@@ -290,11 +290,16 @@ sub tilt {
         my $height = $layer->height;
         my $fw = $layerm->flow(FLOW_ROLE_EXTERNAL_PERIMETER)->scaled_width;
         my $conf = $self->config;
-        my $d = +$conf->get_abs_value_over('support_material_threshold', $fw);
+        my $d = unscale +$conf->get_abs_value_over('support_material_threshold', $fw);
+        print "THRESHOLD\n";
+        use Data::Dumper;
+        print Dumper($d);
 
         my ($over_min_x, $over_max_x, $over_min_y, $over_max_y) = $self->find_extreme_points($layer->slices->polygons);
 
         my ($min_x, $max_x, $min_y, $max_y) = $self->find_extreme_points($lower_layer->slices->polygons);
+
+        print Dumper($over_min_x, $over_max_x, $over_min_y, $over_max_y, 0,0,0,$min_x, $max_x, $min_y, $max_y);
 
         # print "LOWER / UPPER\n";
         # map {print Dumper($_->wkt)} @{$lower_layer->slices->polygons};
@@ -307,30 +312,127 @@ sub tilt {
         my $angleyz;
         my $anglezx;
         my $anglezy;
-        my $angled;
+
+        my $max_x_first_point = Slic3r::Point->new(scale $over_max_x, 0);
+        my $max_x_second_point = Slic3r::Point->new(scale $over_max_x, scale 330);
+
+        my $min_x_first_point = Slic3r::Point->new(scale $over_min_x, 0);
+        my $min_x_second_point = Slic3r::Point->new(scale $over_min_x, scale 330);
+
+        my $max_y_first_point = Slic3r::Point->new(0, scale $over_max_y);
+        my $max_y_second_point = Slic3r::Point->new(scale 700, scale $over_max_y);
+
+        my $min_y_first_point = Slic3r::Point->new(0, scale $over_min_y);
+        my $min_y_second_point = Slic3r::Point->new(scale 700, scale $over_min_y);
+
+        my $max_x_line = Slic3r::Line->new($max_x_first_point, $max_x_second_point);
+
+        my $min_x_line = Slic3r::Line->new($min_x_first_point, $min_x_second_point);
+
+        my $max_y_line = Slic3r::Line->new($max_y_first_point, $max_y_second_point);
+
+        my $min_y_line = Slic3r::Line->new($min_y_first_point, $min_y_second_point);
+
+        my $max_x_point = 0;
+        my $min_x_point = 0;
+        my $max_y_point = 0;
+        my $min_y_point = 0;
+
+        foreach my $polygon (@{$lower_layer->slices->polygons}){
+            if (!$max_x_point){
+                $max_x_point = $polygon->intersection($max_x_line);
+            }
+            if (!$max_y_point){
+                $max_y_point = $polygon->intersection($max_y_line);
+            }
+            if (!$min_x_point){
+                $min_x_point = $polygon->intersection($min_x_line);
+            }
+            if (!$min_y_point){
+                $min_y_point = $polygon->intersection($min_y_line);
+            }
+
+            my @points = ($max_x_point, $max_y_point, $min_x_point, $min_y_point);
+
+            foreach my $point (@points){
+                if ($point){
+                    if ($point->arrayref->[0] == 0 && $point->arrayref->[1] == 0){
+                        $point = 0;
+                    }
+                }
+            }
+        }
+
+        # my $data = {
+        #     max         => 0,
+        #     min         => 0,
+        #     over_min    => 0,
+        #     over_max    => 0,
+        #     dist_max    => 0,
+        #     dist_min    => 0,
+        #     point       => 0,
+        #     height      => 0,
+        # }
+
+        my $max;
+        my $min;
 
         #CANNOT DO ZX AND XZ / ZY AND YZ at the same time
 
-        if ($over_max_x > $max_x){
+        $max = $over_max_x - ($max_x + $d);
+        $min = $over_min_x - ($min_x + $d);
+
+        #order of ( A || B ) is important, if A is true, B is not checked
+
+        if (($max > 0) || ($min > 0)){
+            print "ANGLE XZ\n";
+            $min = 0 if $min_x_point; #if min_point exists, means that it actually is supported by lower layer so don't care about it
+            my $dist = max($max, $min);
+            $anglexz = atan( $dist / $height);
             print "Need tilt x->z\n";
-            $anglexz = atan(abs($over_max_x - $max_x) / $height);
             print "Angle : $anglexz radians\n";
         }
-        if ($over_max_y > $max_y){
+
+        $max = $over_max_y - ($max_y + $d);
+        $min = $over_min_y - ($min_y + $d);
+
+        if (($max > 0) || ($min > 0)){
+            print "ANGLE YZ\n";
+            $min = 0 if $min_y_point;
+            my $dist = max($max, $min);
+            $angleyz = atan( $dist / $height);
+            #$print_z = $self->rotate3D_z(0, $over_max_y, $print_z, $angleyz, 0);
             print "Need tilt y->z\n";
-            $angleyz = atan(abs($over_max_y - $max_y) / $height);
             print "Angle : $angleyz radians\n";
         }
-        if ($over_min_x < $min_x){
+
+        $max = $max_x - ($over_max_x + $d);
+        $min = $min_x - ($over_min_x + $d);
+
+
+        if ( $min > 0 || $max > 0 ){
+            print "ANGLE ZX\n";
+            $max = 0 if $max_x_point;
+            my $dist = max($max, $min);
+            $anglezx = atan( $dist / $height);
             print "Need tilt z->x\n";
-            $anglezx = atan(abs($over_min_x - $min_x) / $height);
             print "Angle : $anglezx radians\n";
         }
-        if ($over_min_y < $min_y){
+
+        $max = $max_y - ($over_max_y + $d);
+        $min = $min_y - ($over_min_y + $d);
+
+        if ( $min > 0 || $max > 0 ){
+            print "ANGLE ZY\n";
+            $max = 0 if $max_y_point;
+            my $dist = max($max, $min);
+            $anglezy = atan($dist / $height);
+            #$print_z = $self->rotate3D_z(0, $over_max_y, $print_z, -$anglezy, 0);
             print "Need tilt z->y\n";
-            $anglezy = atan(abs($over_min_y - $min_y)/ $height);
             print "Angle : $anglezy radians\n";
-        }
+        } 
+
+        #solve tilt cut in rotation issue
 
 
         # If the angle is undefined, affect 0
@@ -342,6 +444,7 @@ sub tilt {
         my @angles = ($anglexz, $angleyz, $anglezx, $anglezy);
 
         print "Support needed for $layerm, $print_z when rotated, $height \n";
+        print Dumper(@angles);
         if (any { $_ != 0 } @angles) {
             return ($print_z, @angles);
         }

@@ -30,7 +30,7 @@ def myFunction(z):
 	vy = z[3]
 	zy = z[4]
 
-	phi = radians(26)#atan((B / 3.0) / ( A / 2.0 ))
+	phi = radians(22.35)#radians(26)#atan((B / 3.0) / ( A / 2.0 ))
 	zx = A / 2.0
 
 	F = empty((5))

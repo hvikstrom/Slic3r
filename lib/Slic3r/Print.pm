@@ -41,22 +41,33 @@ sub size {
 
 sub tilt_process {
     my ($self) = @_;
-    my @layer_height;
     my $last_id = scalar @{$self->objects} - 1;
     my $last_object = $self->objects->[$last_id];
+
     $last_object->infill;
-    push @layer_height, $self->_tilt_process($last_object);
-    return @layer_height;
+    return $self->_tilt_process($last_object);
 }
 
 sub _tilt_process {
     my ($self, $object) = @_;
-    my ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) = $object->tilt;
+    use Data::Dumper;
+    my ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) = (68, 0, 0.45378, 0, 0); #$object->tilt;
     print "HEIGHT $tilt_height\n";
-    if ($tilt_height != 0) {
-        return ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy);
+
+    my $hashdata = {
+        cut     => $tilt_height,
+        angles  => {
+            XZ  => $anglexz,
+            YZ  => $angleyz,
+            ZX  => $anglezx,
+            ZY  => $anglezy,
+        },
+    };
+    print Dumper($hashdata);
+    if ($hashdata->{'cut'}) {
+        return $hashdata;
     }
-    return ($tilt_height);
+    return 0;
 }
 
 sub process {

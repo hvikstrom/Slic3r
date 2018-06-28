@@ -78,13 +78,15 @@ sub new {
     $self->{print} = Slic3r::Print->new;
     $self->{tilt_model} = Slic3r::Model->new;
     $self->{view_tilt_model} = Slic3r::Model->new;
+    $self->{tilt_page} = 0;
+    $self->{tilt_object_identifier} = 0;
     $self->{temp_print} = undef;
     $self->{tilt_print} = Slic3r::Print->new;
+    $self->{tilt_preset} = undef;
     $self->{tilt_objects} = [];
     $self->{tilt_processed} = 0;
     $self->{tilt_processing} = 0;
     $self->{processed} = 0;
-    $self->{tilt_objects} = [];
     # List of Perl objects Slic3r::GUI::Plater::Object, representing a 2D preview of the platter.
     $self->{objects} = [];
 
@@ -117,7 +119,7 @@ sub new {
     };
     my $select_tilt = sub {
         my ($obj_idx) = @_;
-        $self->select_tilt_object($obj_idx);
+        $self->select_object($obj_idx);
     };
     my $on_double_click = sub {
         $self->object_settings_dialog if $self->selected_object;
@@ -195,6 +197,7 @@ sub new {
     EVT_NOTEBOOK_PAGE_CHANGED($self, $self->{preview_notebook}, sub {
         wxTheApp->CallAfter(sub {
             my $sel = $self->{preview_notebook}->GetSelection;
+            $self->{tilt_page} = 0;
             if ($sel == $self->{preview3D_page_idx} || $sel == $self->{toolpaths2D_page_idx}) {
                 if ($self->{temp_print}){
                     $self->{print} = $self->{temp_print};
@@ -212,6 +215,7 @@ sub new {
                     $self->{preview3D}->load_print if $sel == $self->{preview3D_page_idx};
                 }
             } elsif ($sel == $self->{tilt3D_page_idx}) {
+                $self->{tilt_page} = 1;
                 if (!(scalar @{$self->{tilt_print}->objects}) && !$self->{tilt_processed}){
                     $self->start_tilt_process;
                 }
@@ -574,6 +578,21 @@ sub new {
             $self->{sliced_info_box} = $print_info_sizer;
             
         }
+
+        # my $tilt_info_sizer;
+        # {
+        #     my $box = Wx::StaticBox->new($self, -1, "Print Summary");
+        #     $tilt_info_sizer = Wx::StaticBoxSizer->new$($box, wxVERTICAL);
+        #     $tilt_info_sizer->SetMinSize([350, -1]);
+        #     my $grid_sizer = Wx::FlexGridSizer->new(2, 2, 5, 5);
+        #     $grid_sizer->SetFlexibleDirection(wxHORIZONTAL);
+        #     $grid_sizer->AddGrowableCol(1, 1);
+        #     $grid_sizer->AddGrowableCol(3, 1);
+        #     $tilt_info_sizer->Add($grid_sizer, 0, wxEXPAND);
+        #     my @info = (
+                
+        #     )
+        # }
         
         my $buttons_sizer = Wx::BoxSizer->new(wxHORIZONTAL);
         $buttons_sizer->AddStretchSpacer(1);
@@ -1974,8 +1993,8 @@ sub start_background_process {
         $self->statusbar->SetStatusText($@);
         return;
     }
-    print "BACKGROUND PROCESS\n";
-    print Dumper($self->{print}->config->get('print_tilt'), $self->{temp_print});
+    # print "BACKGROUND PROCESS\n";
+    # print Dumper($self->{print}->config->get('print_tilt'), $self->{temp_print});
 
     # start thread
     @_ = ();
@@ -2049,6 +2068,8 @@ sub tilt_update {
     
     $self->{tilt_model}->clear_objects;
     $self->{tilt_print}->clear_objects;
+    $self->{tilt_preset} = undef;
+    $self->{tilt_objects} = [];
     $self->{view_tilt_model}->clear_objects;
     $self->{tilt3D}->update;
     $self->{tilt_processed} = 0;
@@ -2056,6 +2077,10 @@ sub tilt_update {
 
 sub start_tilt_process {
     my ($self) = @_;
+
+    if ($self->{tilt_processed}){
+        return 1;
+    }
 
     if (!(scalar @{$self->{model}->objects})){
         return 0;
@@ -2065,19 +2090,20 @@ sub start_tilt_process {
 
     my $config = $self->config;
 
+    $self->{tilt_objects} = [];
     $self->{tilt_model}->clear_objects;
     $self->{tilt_model}->add_object($self->{model}->objects->[0]);
 
     $self->{bed_tilt} = Slic3r::BedTilting->new(
         _model => $self->{tilt_model},
         _config => $config,
+        _preset => $self->{tilt_preset},
     ); 
 
     my ($result_model, $view_model) = $self->{bed_tilt}->process_bed_tilt;
 
     if (!$result_model){
         $self->statusbar->SetStatusText("Error during the tilting process");
-        $self->invalidate_tilt;
         return 0;
     }
 
@@ -2085,8 +2111,8 @@ sub start_tilt_process {
 
 
     $self->{tilt_processed} = 1;
-    print "ON MODEL CHANGE\n";
-    print Dumper(scalar @{$result_model->objects});
+    # print "ON MODEL CHANGE\n";
+    # print Dumper(scalar @{$result_model->objects});
     $self->{tilt_model}->clear_objects;
     $self->{view_tilt_model}->clear_objects;
     for my $object (@{$view_model->objects}){
@@ -2095,13 +2121,16 @@ sub start_tilt_process {
     for my $object (@{$result_model->objects}){
         $self->{tilt_model}->add_object($object);
         $self->{tilt_print}->add_model_object($object);
-        push @{ $self->{tilt_objects} }, $object;
+        push @{ $self->{tilt_objects} }, Slic3r::GUI::Plater::Object->new(
+            name => $object->name || basename($object->input_file), identifier =>
+            $self->{tilt_object_identifier}++
+        );
     }
     eval {
         $config->set('complete_objects', 1);
         $config->validate;
     };
-    $config->set('skirts', 2);
+    $config->set('skirts', 5);
     $config->set('print_tilt', 1);
     $config->set('initial_z_tilt', 10.0);
 
@@ -2109,8 +2138,8 @@ sub start_tilt_process {
 
     $self->{tilt_print}->apply_config($config);
 
-    print "CONFIG PRINT TILT\n";
-    print Dumper($self->{tilt_print}->config->get('print_tilt'));
+    # print "CONFIG PRINT TILT\n";
+    # print Dumper($self->{tilt_print}->config->get('print_tilt'));
 
     $self->{tilt3D}->update;
 
@@ -2132,7 +2161,10 @@ sub export_gcode {
         $self->{temp_print} = undef;
     }
 
-    if (!$self->{tilt_processed} && $self->{tilt_processing}){
+    # print "EXPORT GCODE\n";
+    # print Dumper($self->{tilt_processed});
+
+    if ($self->{tilt_processing}){
         $self->{tilt_processing} = 0;
         return 0 if (!$self->start_tilt_process);
         $self->{temp_print} = $self->{print};
@@ -2760,6 +2792,17 @@ sub on_extruders_change {
     $self->Layout;
 }
 
+sub print_dumper {
+    my ($self, $bb_mod) = @_;
+    use Data::Dumper;
+    print Dumper($bb_mod->x_min);
+    print Dumper($bb_mod->x_max);
+    print Dumper($bb_mod->y_min);
+    print Dumper($bb_mod->y_max);
+    print Dumper($bb_mod->z_min);
+    print Dumper($bb_mod->z_max);
+}
+
 sub object_cut_dialog {
     my $self = shift;
     my ($obj_idx) = @_;
@@ -2773,12 +2816,21 @@ sub object_cut_dialog {
         return;
     }
     
+    print "PLATER CUT DIALOG\n";
+    my $bb_mod = $self->{model}->objects->[$obj_idx]->bounding_box;
+
+    $self->print_dumper($bb_mod);
+
     my $dlg = Slic3r::GUI::Plater::ObjectCutDialog->new($self,
 		object              => $self->{objects}[$obj_idx],
 		model_object        => $self->{model}->objects->[$obj_idx],
 	);
 	return unless $dlg->ShowModal == wxID_OK;
-	
+
+    if ($dlg->tilt_cut){
+        $self->{tilt_preset} = $dlg->tilt_data;
+        return 1;
+    }
 	if (my @new_objects = $dlg->NewModelObjects) {
 	    my $process_dialog = Wx::ProgressDialog->new('Loading…', "Loading new objects…", 100, $self, 0);
         $process_dialog->Pulse;
@@ -2800,8 +2852,8 @@ sub object_cut_dialog {
 
 	    $self->remove($obj_idx, 'true');
 	    $self->load_model_objects(grep defined($_), @new_objects);
-	    $self->arrange if @new_objects <= 2; # don't arrange for grid cuts
-	    
+        $self->arrange if (@new_objects <= 2); # don't arrange for grid cuts
+
 	    $process_dialog->Destroy;
 	}
 }
@@ -2883,19 +2935,24 @@ sub object_list_changed {
 sub selection_changed {
     my $self = shift;
     
+    # print "SELECT CHANGED\n";
+    # print Dumper($self->{tilt_objects});
+    # print Dumper($self->{objects});
+
     my ($obj_idx, $object) = $self->selected_object;
     my $have_sel = defined $obj_idx;
 
-    # Remove selection in 2d Plater.
-    $self->{canvas}->{selected_instance} = undef;
+    if (!$self->{tilt_page}){
+        # Remove selection in 2d Plater.
+        $self->{canvas}->{selected_instance} = undef;
 
-    if (my $menu = $self->GetFrame->{plater_select_menu}) {
-        $_->Check(0) for $menu->GetMenuItems;
-        if ($have_sel) {
-            $menu->FindItemByPosition($obj_idx)->Check(1);
+        if (my $menu = $self->GetFrame->{plater_select_menu}) {
+            $_->Check(0) for $menu->GetMenuItems;
+            if ($have_sel) {
+                $menu->FindItemByPosition($obj_idx)->Check(1);
+            }
         }
     }
-    
     my $method = $have_sel ? 'Enable' : 'Disable';
     $self->{"btn_$_"}->$method
         for grep $self->{"btn_$_"}, qw(remove increase decrease rotate45cw rotate45ccw changescale split cut layers settings);
@@ -2909,6 +2966,9 @@ sub selection_changed {
         
         if ($have_sel) {
             my $model_object = $self->{model}->objects->[$obj_idx];
+            if ($self->{tilt_page}){
+                $model_object = $self->{tilt_model}->objects->[$obj_idx];
+            }
             $self->{object_info_choice}->SetSelection($obj_idx);
             $self->{object_info_copies}->SetLabel($model_object->instances_count);
             my $model_instance = $model_object->instances->[0];
@@ -2955,24 +3015,19 @@ sub selection_changed {
     $self->GetFrame->on_plater_selection_changed($have_sel);
 }
 
-sub select_tilt_object {
-    my ($self, $obj_idx) = @_;
-
-    if (defined $obj_idx){
-        print Dumper($self->{tilt_objects}->[$obj_idx]->config->get('tilt_levels'));
-    }
-    $self->selection_changed(1);
-}
-
 sub select_object {
     my ($self, $obj_idx) = @_;
 
-    $_->selected(0) for @{ $self->{objects} };
-    $_->selected_instance(-1) for @{ $self->{objects} };
+    my $objects = $self->{objects};
+    if ($self->{tilt_page}){
+        $objects = $self->{tilt_objects};
+    }
+    $_->selected(0) for @{ $objects };
+    $_->selected_instance(-1) for @{ $objects };
 
     if (defined $obj_idx) {
-        $self->{objects}->[$obj_idx]->selected(1);
-        $self->{objects}->[$obj_idx]->selected_instance(0);
+        $objects->[$obj_idx]->selected(1);
+        $objects->[$obj_idx]->selected_instance(0);
     }
     $self->selection_changed(1);
 }
@@ -3007,10 +3062,15 @@ sub select_prev {
 
 sub selected_object {
     my $self = shift;
+
+    my $objects = $self->{objects};
+    if ($self->{tilt_page}){
+        $objects = $self->{tilt_objects};
+    }
     
-    my $obj_idx = first { $self->{objects}[$_]->selected } 0..$#{ $self->{objects} };
+    my $obj_idx = first { $objects->[$_]->selected } 0..$#{ $objects };
     return undef if !defined $obj_idx;
-    return ($obj_idx, $self->{objects}[$obj_idx]),
+    return ($obj_idx, $objects->[$obj_idx]);
 }
 
 sub refresh_canvases {
