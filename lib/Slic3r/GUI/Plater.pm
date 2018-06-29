@@ -2115,6 +2115,7 @@ sub start_tilt_process {
     # print Dumper(scalar @{$result_model->objects});
     $self->{tilt_model}->clear_objects;
     $self->{view_tilt_model}->clear_objects;
+    $self->{tilt_preset} = undef;
     for my $object (@{$view_model->objects}){
         $self->{view_tilt_model}->add_object($object);
     }
@@ -2820,6 +2821,7 @@ sub object_cut_dialog {
     my $bb_mod = $self->{model}->objects->[$obj_idx]->bounding_box;
 
     $self->print_dumper($bb_mod);
+    my $temp_model = $self->{model}->clone;
 
     my $dlg = Slic3r::GUI::Plater::ObjectCutDialog->new($self,
 		object              => $self->{objects}[$obj_idx],
@@ -2829,6 +2831,10 @@ sub object_cut_dialog {
 
     if ($dlg->tilt_cut){
         $self->{tilt_preset} = $dlg->tilt_data;
+        $self->{model} = $temp_model;
+        print "AFTER CUT DIALOG\n";
+        $bb_mod = $self->{model}->objects->[$obj_idx]->bounding_box;
+        $self->print_dumper($bb_mod);
         return 1;
     }
 	if (my @new_objects = $dlg->NewModelObjects) {

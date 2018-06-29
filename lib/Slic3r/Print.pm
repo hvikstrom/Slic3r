@@ -51,7 +51,7 @@ sub tilt_process {
 sub _tilt_process {
     my ($self, $object) = @_;
     use Data::Dumper;
-    my ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) = (68, 0, 0.45378, 0, 0); #$object->tilt;
+    my ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) = $object->tilt;
     print "HEIGHT $tilt_height\n";
 
     my $hashdata = {

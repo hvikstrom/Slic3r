@@ -148,7 +148,7 @@ sub process_bed_tilt {
 
         #$tilt_cut += 10;
 
-        $angles[1] -= 0.05;
+        # $angles[1] -= 0.05;
         # $angles[1] -= $angles[1] if ($iter_result == 1);
         # $angles[2] -= $angles[2] if ($iter_result == 1 or $iter_result == 0);
         my ($anglexz, $angleyz, $anglezx, $anglezy) = @angles;
