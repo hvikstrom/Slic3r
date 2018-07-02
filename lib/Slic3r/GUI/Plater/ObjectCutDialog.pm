@@ -57,59 +57,8 @@ sub new {
             # genates tens of events for a single value change.
             # Only trigger the recalculation if the value changes
             # or a live preview was activated and the mesh cut is not valid yet.
-            if ($opt_id eq 'YZ'){
-                # print "BEFORE ROTATE\n";
-                # my $bb_mod = $self->{model_object}->bounding_box;
-                # $self->print_dumper($bb_mod);
-                my $val = deg2rad($optgroup->get_value($opt_id));
-                if ($self->{tilt_angle}{$opt_id} != $val ||
-                ! $self->{mesh_cut_valid} && $self->_life_preview_active()) {
-                    my $yz_angle = -$self->{tilt_angle}{YZ} + $self->{tilt_angle}{ZY};
-                    my $zx_angle = -$self->{tilt_angle}{ZX} + $self->{tilt_angle}{XZ};
-                    $self->{model_object}->rotate3D( $yz_angle , $zx_angle, 0, 1);
-                    # print "AFTER ROTATE\n";
-                    # $bb_mod = $self->{model_object}->bounding_box;
-                    # $self->print_dumper($bb_mod);
-                    if ($val >= 0){
-                        $self->{tilt_angle}{YZ} = $val;
-                        $self->{tilt_angle}{ZY} = 0;
-                    }
-                    else {
-                        $self->{tilt_angle}{YZ} = 0;
-                        $self->{tilt_angle}{ZY} = -$val;
-                    }
-                    $self->{model_object}->rotate3D($val, -$zx_angle, 0, 0);
-                    $self->{mesh_cut_valid} = 0;
-                    wxTheApp->CallAfter(sub {
-                        $self->_update;
-                    });
-                    $self->{model_object}->center_around_origin;  # align to Z = 0
-                }
-            }
-            elsif ($opt_id eq 'ZX'){
-                my $val = deg2rad($optgroup->get_value($opt_id));
-                if ($self->{tilt_angle}{$opt_id} != $val ||
-                ! $self->{mesh_cut_valid} && $self->_life_preview_active()) {
-                    my $yz_angle = -$self->{tilt_angle}{YZ} + $self->{tilt_angle}{ZY};
-                    my $zx_angle = -$self->{tilt_angle}{ZX} + $self->{tilt_angle}{XZ};
-                    $self->{model_object}->rotate3D($yz_angle, $zx_angle, 0, 1);
-                    if ($val >= 0){
-                        $self->{tilt_angle}{ZX} = $val;
-                        $self->{tilt_angle}{XZ} = 0;
-                    }
-                    else {
-                        $self->{tilt_angle}{ZX} = 0;
-                        $self->{tilt_angle}{XZ} = -$val;
-                    }
-                    $self->{model_object}->rotate3D(-$yz_angle, $val, 0, 0);
-                    $self->{mesh_cut_valid} = 0;
-                    wxTheApp->CallAfter(sub {
-                        $self->_update;
-                    });
-                    $self->{model_object}->center_around_origin;  # align to Z = 0
-                }
-            }
-            elsif ($self->{cut_options}{$opt_id} != $optgroup->get_value($opt_id) ||
+            
+            if ($self->{cut_options}{$opt_id} != $optgroup->get_value($opt_id) ||
                 ! $self->{mesh_cut_valid} && $self->_life_preview_active()) {
                 $self->{cut_options}{$opt_id} = $optgroup->get_value($opt_id);
                 $self->{mesh_cut_valid} = 0;
@@ -169,24 +118,6 @@ sub new {
         tooltip     => 'If enabled, object will be cut in real time.',
         default     => $self->{cut_options}{preview},
     ));
-    $optgroup->append_single_option_line(Slic3r::GUI::OptionsGroup::Option->new(
-        opt_id      => 'YZ',
-        type        => 'slider',
-        label       => 'YZ',
-        default     => $self->{tilt_angle}{YZ},
-        min         => -26,
-        max         => 26,
-        full_width  => 1,
-    ));
-    $optgroup->append_single_option_line(Slic3r::GUI::OptionsGroup::Option->new(
-        opt_id      => 'ZX',
-        type        => 'slider',
-        label       => 'ZX',
-        default     => $self->{tilt_angle}{ZX},
-        min         => -13,
-        max         => 13,
-        full_width  => 1,
-    ));
     {
         my $cut_button_sizer = Wx::BoxSizer->new(wxVERTICAL);
         
@@ -197,19 +128,112 @@ sub new {
         $self->{btn_cut_grid} = Wx::Button->new($self, -1, "Cut by grid…", wxDefaultPosition, wxDefaultSize);
         $cut_button_sizer->Add($self->{btn_cut_grid}, 0, wxALIGN_RIGHT | wxALL, 10);
         
-        $self->{btn_preset} = Wx::Button->new($self, -1, "Validate tilt preset", wxDefaultPosition, wxDefaultSize);
-        $self->{btn_preset}->SetDefault;
-        $cut_button_sizer->Add($self->{btn_preset}, 0, wxALIGN_RIGHT | wxALL, 10);
-        
-
         $optgroup->append_line(Slic3r::GUI::OptionsGroup::Line->new(
             sizer => $cut_button_sizer,
+        ));
+    }
+
+    my $tilt_optgroup;
+    $tilt_optgroup = $self->{tilt_optgroup} = Slic3r::GUI::OptionsGroup->new(
+        parent      => $self,
+        title       => 'Tilt Cut',
+        on_change   => sub {
+            my ($opt_id) = @_;
+            # There seems to be an issue with wxWidgets 3.0.2/3.0.3, where the slider
+            # genates tens of events for a single value change.
+            # Only trigger the recalculation if the value changes
+            # or a live preview was activated and the mesh cut is not valid yet.
+            if ($opt_id eq 'YZ'){
+                # print "BEFORE ROTATE\n";
+                # my $bb_mod = $self->{model_object}->bounding_box;
+                # $self->print_dumper($bb_mod);
+                my $val = deg2rad($tilt_optgroup->get_value($opt_id));
+                if ($self->{tilt_angle}{$opt_id} != $val ||
+                ! $self->{mesh_cut_valid} && $self->_life_preview_active()) {
+                    my $yz_angle = -$self->{tilt_angle}{YZ} + $self->{tilt_angle}{ZY};
+                    my $zx_angle = -$self->{tilt_angle}{ZX} + $self->{tilt_angle}{XZ};
+                    $self->{model_object}->rotate3D( $yz_angle , $zx_angle, 0, 1);
+                    # print "AFTER ROTATE\n";
+                    # $bb_mod = $self->{model_object}->bounding_box;
+                    # $self->print_dumper($bb_mod);
+                    if ($val >= 0){
+                        $self->{tilt_angle}{YZ} = $val;
+                        $self->{tilt_angle}{ZY} = 0;
+                    }
+                    else {
+                        $self->{tilt_angle}{YZ} = 0;
+                        $self->{tilt_angle}{ZY} = -$val;
+                    }
+                    $self->{model_object}->rotate3D($val, -$zx_angle, 0, 0);
+                    $self->{mesh_cut_valid} = 0;
+                    wxTheApp->CallAfter(sub {
+                        $self->_update;
+                    });
+                    $self->{model_object}->center_around_origin;  # align to Z = 0
+                }
+            }
+            elsif ($opt_id eq 'ZX'){
+                my $val = deg2rad($tilt_optgroup->get_value($opt_id));
+                if ($self->{tilt_angle}{$opt_id} != $val ||
+                ! $self->{mesh_cut_valid} && $self->_life_preview_active()) {
+                    my $yz_angle = -$self->{tilt_angle}{YZ} + $self->{tilt_angle}{ZY};
+                    my $zx_angle = -$self->{tilt_angle}{ZX} + $self->{tilt_angle}{XZ};
+                    $self->{model_object}->rotate3D($yz_angle, $zx_angle, 0, 1);
+                    if ($val >= 0){
+                        $self->{tilt_angle}{ZX} = $val;
+                        $self->{tilt_angle}{XZ} = 0;
+                    }
+                    else {
+                        $self->{tilt_angle}{ZX} = 0;
+                        $self->{tilt_angle}{XZ} = -$val;
+                    }
+                    $self->{model_object}->rotate3D(-$yz_angle, $val, 0, 0);
+                    $self->{mesh_cut_valid} = 0;
+                    wxTheApp->CallAfter(sub {
+                        $self->_update;
+                    });
+                    $self->{model_object}->center_around_origin;  # align to Z = 0
+                }
+            }
+        },
+        label_width  => 120,
+    );
+
+    $tilt_optgroup->append_single_option_line(Slic3r::GUI::OptionsGroup::Option->new(
+        opt_id      => 'YZ',
+        type        => 'slider',
+        label       => 'YZ',
+        default     => $self->{tilt_angle}{YZ},
+        min         => -26,
+        max         => 26,
+        full_width  => 1,
+    ));
+    $tilt_optgroup->append_single_option_line(Slic3r::GUI::OptionsGroup::Option->new(
+        opt_id      => 'ZX',
+        type        => 'slider',
+        label       => 'ZX',
+        default     => $self->{tilt_angle}{ZX},
+        min         => -13,
+        max         => 13,
+        full_width  => 1,
+    ));
+
+    {
+        my $tilt_cut_button_sizer = Wx::BoxSizer->new(wxVERTICAL);
+        
+        $self->{btn_preset} = Wx::Button->new($self, -1, "Validate tilt preset", wxDefaultPosition, wxDefaultSize);
+        $self->{btn_preset}->SetDefault;
+        $tilt_cut_button_sizer->Add($self->{btn_preset}, 0, wxALIGN_RIGHT | wxALL, 10);
+        
+        $tilt_optgroup->append_line(Slic3r::GUI::OptionsGroup::Line->new(
+            sizer => $tilt_cut_button_sizer,
         ));
     }
     
     # left pane with tree
     my $left_sizer = Wx::BoxSizer->new(wxVERTICAL);
     $left_sizer->Add($optgroup->sizer, 0, wxEXPAND | wxBOTTOM | wxLEFT | wxRIGHT, 10);
+    $left_sizer->Add($tilt_optgroup->sizer, 0, wxEXPAND | wxBOTTOM | wxLEFT | wxRIGHT, 10);
     
     # right pane with preview canvas
     my $canvas;
