@@ -488,6 +488,39 @@ sub new {
             $o->set_default_config($self->{settings_override_config});
             $o->set_config($self->{settings_override_config});
         }
+
+        my $tilt_preset_sizer;
+        {
+            my $box = Wx::StaticBox->new($self, -1, "Tilt preset");
+            $tilt_preset_sizer = Wx::StaticBoxSizer->new($box, wxVERTICAL);
+            $tilt_preset_sizer->SetMinSize([350,-1]);
+
+            my $grid_sizer = Wx::FlexGridSizer->new(3, 4, 5, 5);
+            $grid_sizer->SetFlexibleDirection(wxHORIZONTAL);
+            $grid_sizer->AddGrowableCol(1, 1);
+            $grid_sizer->AddGrowableCol(3, 1);
+            $tilt_preset_sizer->Add($grid_sizer, 0, wxEXPAND);
+            
+            my @info = (
+                cut     => "Cut",
+                XZ      => "AngleXZ",
+                YZ      => "AngleYZ",
+                ZY      => "AngleZY",
+                ZX      => "AngleZX"
+            );
+
+            while (my $field = shift @info) {
+                my $label = shift @info;
+                my $text = Wx::StaticText->new($self, -1, "$label:", wxDefaultPosition, wxDefaultSize, wxALIGN_LEFT);
+                $text->SetFont($Slic3r::GUI::small_font);
+                $grid_sizer->Add($text, 0);
+                
+                $self->{"tilt_preset_$field"} = Wx::StaticText->new($self, -1, "", wxDefaultPosition, wxDefaultSize, wxALIGN_LEFT);
+                $self->{"tilt_preset_$field"}->SetFont($Slic3r::GUI::small_font);
+                $grid_sizer->Add($self->{"tilt_preset_$field"}, 0);
+            }
+
+        }
         
         my $object_info_sizer;
         {
@@ -578,21 +611,6 @@ sub new {
             $self->{sliced_info_box} = $print_info_sizer;
             
         }
-
-        # my $tilt_info_sizer;
-        # {
-        #     my $box = Wx::StaticBox->new($self, -1, "Print Summary");
-        #     $tilt_info_sizer = Wx::StaticBoxSizer->new$($box, wxVERTICAL);
-        #     $tilt_info_sizer->SetMinSize([350, -1]);
-        #     my $grid_sizer = Wx::FlexGridSizer->new(2, 2, 5, 5);
-        #     $grid_sizer->SetFlexibleDirection(wxHORIZONTAL);
-        #     $grid_sizer->AddGrowableCol(1, 1);
-        #     $grid_sizer->AddGrowableCol(3, 1);
-        #     $tilt_info_sizer->Add($grid_sizer, 0, wxEXPAND);
-        #     my @info = (
-                
-        #     )
-        # }
         
         my $buttons_sizer = Wx::BoxSizer->new(wxHORIZONTAL);
         $buttons_sizer->AddStretchSpacer(1);
@@ -606,6 +624,7 @@ sub new {
         $right_sizer->Add($presets, 0, wxEXPAND | wxTOP, 10) if defined $presets;
         $right_sizer->Add($buttons_sizer, 0, wxEXPAND | wxBOTTOM, 5);
         $right_sizer->Add($self->{settings_override_panel}, 1, wxEXPAND, 5);
+        $right_sizer->Add($tilt_preset_sizer, 0, wxEXPAND, 0);
         $right_sizer->Add($object_info_sizer, 0, wxEXPAND, 0);
         $right_sizer->Add($print_info_sizer, 0, wxEXPAND, 0);
         $right_sizer->Hide($print_info_sizer);
@@ -1439,6 +1458,7 @@ sub remove {
     splice @{$self->{objects}}, $obj_idx, 1;
     $self->{model}->delete_object($obj_idx);
     $self->{print}->delete_object($obj_idx);
+
 
     $self->object_list_changed;
     
@@ -2704,6 +2724,7 @@ sub on_model_change {
     if ($Slic3r::GUI::Settings->{_}{autocenter} || $force_autocenter) {
         $self->{model}->center_instances_around_point($self->bed_centerf);
     }
+
     $self->refresh_canvases;
     $self->tilt_update;
     
@@ -2831,10 +2852,20 @@ sub object_cut_dialog {
 
     if ($dlg->tilt_cut){
         $self->{tilt_preset} = $dlg->tilt_data;
-        $self->{model} = $temp_model;
+        for my $obj_idx (0..(scalar @{$self->{model}->objects} - 1)){
+            $self->{model}->delete_object($obj_idx);
+        }
+        foreach my $object (@{$temp_model->objects}){
+            $self->{model}->add_object($object);
+        }
         print "AFTER CUT DIALOG\n";
         $bb_mod = $self->{model}->objects->[$obj_idx]->bounding_box;
         $self->print_dumper($bb_mod);
+        $self->{tilt_preset_cut}->SetLabel($self->{tilt_preset}{'cut'});
+        $self->{tilt_preset_XZ}->SetLabel($self->{tilt_preset}{'angles'}{'XZ'});
+        $self->{tilt_preset_ZY}->SetLabel($self->{tilt_preset}{'angles'}{'ZY'});
+        $self->{tilt_preset_YZ}->SetLabel($self->{tilt_preset}{'angles'}{'YZ'});
+        $self->{tilt_preset_ZX}->SetLabel($self->{tilt_preset}{'angles'}{'ZX'});
         return 1;
     }
 	if (my @new_objects = $dlg->NewModelObjects) {
@@ -3081,7 +3112,7 @@ sub selected_object {
 
 sub refresh_canvases {
     my ($self) = @_;
-    
+
     $self->{canvas}->Refresh;
     $self->{canvas3D}->update if $self->{canvas3D};
     $self->{preview3D}->reload_print if $self->{preview3D};

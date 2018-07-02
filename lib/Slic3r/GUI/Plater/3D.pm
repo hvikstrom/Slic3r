@@ -85,13 +85,13 @@ sub set_on_instances_moved {
 
 sub update {
     my ($self) = @_;
-    
+
     $self->reset_objects;
     $self->update_bed_size;
-    
+
     foreach my $obj_idx (0..$#{$self->{model}->objects}) {
         my @volume_idxs = $self->load_object($self->{model}, $obj_idx);
-        
+
         if ($self->{objects}[$obj_idx]->selected) {
             $self->select_volume($_) for @volume_idxs;
         }
