@@ -624,7 +624,7 @@ sub new {
         $right_sizer->Add($presets, 0, wxEXPAND | wxTOP, 10) if defined $presets;
         $right_sizer->Add($buttons_sizer, 0, wxEXPAND | wxBOTTOM, 5);
         $right_sizer->Add($self->{settings_override_panel}, 1, wxEXPAND, 5);
-        $right_sizer->Add($tilt_preset_sizer, 0, wxEXPAND, 0);
+        $right_sizer->Add($tilt_preset_sizer, 0, wxEXPAND | wxBOTTOM, 5);
         $right_sizer->Add($object_info_sizer, 0, wxEXPAND, 0);
         $right_sizer->Add($print_info_sizer, 0, wxEXPAND, 0);
         $right_sizer->Hide($print_info_sizer);
@@ -2848,16 +2848,11 @@ sub object_cut_dialog {
 		object              => $self->{objects}[$obj_idx],
 		model_object        => $self->{model}->objects->[$obj_idx],
 	);
+
 	return unless $dlg->ShowModal == wxID_OK;
 
     if ($dlg->tilt_cut){
         $self->{tilt_preset} = $dlg->tilt_data;
-        for my $obj_idx (0..(scalar @{$self->{model}->objects} - 1)){
-            $self->{model}->delete_object($obj_idx);
-        }
-        foreach my $object (@{$temp_model->objects}){
-            $self->{model}->add_object($object);
-        }
         print "AFTER CUT DIALOG\n";
         $bb_mod = $self->{model}->objects->[$obj_idx]->bounding_box;
         $self->print_dumper($bb_mod);
@@ -2868,7 +2863,7 @@ sub object_cut_dialog {
         $self->{tilt_preset_ZX}->SetLabel($self->{tilt_preset}{'angles'}{'ZX'});
         return 1;
     }
-	if (my @new_objects = $dlg->NewModelObjects) {
+	elsif (my @new_objects = $dlg->NewModelObjects) {
 	    my $process_dialog = Wx::ProgressDialog->new('Loading…', "Loading new objects…", 100, $self, 0);
         $process_dialog->Pulse;
 
@@ -3042,6 +3037,7 @@ sub selection_changed {
         } else {
             $self->{object_info_choice}->SetSelection(-1);
             $self->{"object_info_$_"}->SetLabel("") for qw(copies size volume facets materials manifold);
+            $self->{"tilt_preset_$_"}->SetLabel("") for qw(cut XZ YZ ZY ZX);
             $self->{object_info_manifold_warning_icon}->Hide;
             $self->{object_info_manifold}->SetToolTipString("");
         }

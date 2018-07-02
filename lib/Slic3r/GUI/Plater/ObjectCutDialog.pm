@@ -28,7 +28,9 @@ sub new {
 
     $self->{model_object}->transform_by_instance($self->{model_object}->get_instance(0), 1);
     
-    $self->{tilt_cut} = 0;
+    $self->{model} = $self->{model_object}->model;
+    $self->{temp_model} = $self->{model}->clone;
+    $self->{tilt} = 0;
     $self->{tilt_angle} = {
         XZ  => 0,
         YZ  => 0,
@@ -143,51 +145,25 @@ sub new {
             # genates tens of events for a single value change.
             # Only trigger the recalculation if the value changes
             # or a live preview was activated and the mesh cut is not valid yet.
-            if ($opt_id eq 'YZ'){
-                # print "BEFORE ROTATE\n";
-                # my $bb_mod = $self->{model_object}->bounding_box;
-                # $self->print_dumper($bb_mod);
+            if ($opt_id eq 'YZ' || $opt_id eq 'ZX'){
                 my $val = deg2rad($tilt_optgroup->get_value($opt_id));
                 if ($self->{tilt_angle}{$opt_id} != $val ||
                 ! $self->{mesh_cut_valid} && $self->_life_preview_active()) {
-                    my $yz_angle = -$self->{tilt_angle}{YZ} + $self->{tilt_angle}{ZY};
-                    my $zx_angle = -$self->{tilt_angle}{ZX} + $self->{tilt_angle}{XZ};
-                    $self->{model_object}->rotate3D( $yz_angle , $zx_angle, 0, 1);
-                    # print "AFTER ROTATE\n";
-                    # $bb_mod = $self->{model_object}->bounding_box;
-                    # $self->print_dumper($bb_mod);
+                    my $yz_angle = $self->{tilt_angle}{YZ} - $self->{tilt_angle}{ZY};
+                    my $zx_angle = $self->{tilt_angle}{ZX} - $self->{tilt_angle}{XZ};
+                    my $r_opt_id = scalar reverse $opt_id;
+                    $self->{model_object}->rotate3D( -$yz_angle , -$zx_angle, 0, 1);
                     if ($val >= 0){
-                        $self->{tilt_angle}{YZ} = $val;
-                        $self->{tilt_angle}{ZY} = 0;
+                        $self->{tilt_angle}{$opt_id} = $val;
+                        $self->{tilt_angle}{$r_opt_id} = 0;
                     }
                     else {
-                        $self->{tilt_angle}{YZ} = 0;
-                        $self->{tilt_angle}{ZY} = -$val;
+                        $self->{tilt_angle}{$opt_id} = 0;
+                        $self->{tilt_angle}{$r_opt_id} = -$val;
                     }
-                    $self->{model_object}->rotate3D($val, -$zx_angle, 0, 0);
-                    $self->{mesh_cut_valid} = 0;
-                    wxTheApp->CallAfter(sub {
-                        $self->_update;
-                    });
-                    $self->{model_object}->center_around_origin;  # align to Z = 0
-                }
-            }
-            elsif ($opt_id eq 'ZX'){
-                my $val = deg2rad($tilt_optgroup->get_value($opt_id));
-                if ($self->{tilt_angle}{$opt_id} != $val ||
-                ! $self->{mesh_cut_valid} && $self->_life_preview_active()) {
-                    my $yz_angle = -$self->{tilt_angle}{YZ} + $self->{tilt_angle}{ZY};
-                    my $zx_angle = -$self->{tilt_angle}{ZX} + $self->{tilt_angle}{XZ};
-                    $self->{model_object}->rotate3D($yz_angle, $zx_angle, 0, 1);
-                    if ($val >= 0){
-                        $self->{tilt_angle}{ZX} = $val;
-                        $self->{tilt_angle}{XZ} = 0;
-                    }
-                    else {
-                        $self->{tilt_angle}{ZX} = 0;
-                        $self->{tilt_angle}{XZ} = -$val;
-                    }
-                    $self->{model_object}->rotate3D(-$yz_angle, $val, 0, 0);
+                    $yz_angle = $self->{tilt_angle}{YZ} - $self->{tilt_angle}{ZY};
+                    $zx_angle = $self->{tilt_angle}{ZX} - $self->{tilt_angle}{XZ};
+                    $self->{model_object}->rotate3D($yz_angle, $zx_angle, 0, 0);
                     $self->{mesh_cut_valid} = 0;
                     wxTheApp->CallAfter(sub {
                         $self->_update;
@@ -217,7 +193,6 @@ sub new {
         max         => 13,
         full_width  => 1,
     ));
-
     {
         my $tilt_cut_button_sizer = Wx::BoxSizer->new(wxVERTICAL);
         
@@ -263,10 +238,10 @@ sub new {
         $self->{model_object}->rotate3D($yz_angle, $zx_angle, 0, 1);
         my $bb_mod = $self->{model_object}->bounding_box;
         $self->print_dumper($bb_mod);
-        $self->{tilt_cut} = 0;
+        $self->{tilt} = 0;
         foreach my $key (keys %{$self->{tilt_angle}}){
             if ($self->{tilt_angle}{$key} != 0){
-                $self->{tilt_cut} = 1;
+                $self->{tilt} = 1;
             }
         }
         $self->{already_closed} = 1;
@@ -339,6 +314,13 @@ sub new {
 
     EVT_CLOSE($self, sub {
         # Note that the window was already closed, so a pending update will not be executed.
+        for my $obj_idx (0..(scalar @{$self->{model}->objects} - 1)){
+            $self->{model}->delete_object($obj_idx);
+        }
+        foreach my $object (@{$self->{temp_model}->objects}){
+            $self->{model}->add_object($object);
+        }
+        
         $self->{already_closed} = 1;
         $self->EndModal(wxID_CANCEL);
         $self->Destroy();
@@ -504,7 +486,7 @@ sub NewModelObjects {
 
 sub tilt_cut {
     my ($self) = @_;
-    return $self->{tilt_cut};
+    return $self->{tilt};
 }
 
 sub tilt_data {
