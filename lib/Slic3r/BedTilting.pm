@@ -43,6 +43,14 @@ sub clean_values {
     undef %tilt_levels;
 }
 
+sub start_process {
+    my ($self, $dlg) = @_;
+    #my $frame = Slic3r::GUI::Tilt3DConsole->OnInit($self, $parent);
+    print "PROCESS\n";
+    $self->{dlg} = $dlg;
+    $self->process_bed_tilt;
+}
+
 sub process_bed_tilt {
     my ($self) = @_;
 
@@ -79,6 +87,8 @@ sub process_bed_tilt {
     my $original_model_object = $model->objects->[0];
 
     my $model_offset = Slic3r::Pointf->new($ORIGIN_OFFSET->x, $ORIGIN_OFFSET->y);
+    my $dumper_x = $ORIGIN_OFFSET->x;
+    $self->{dlg}->appendConsole("Setting offsets to X: $dumper_x");
 
     #Set the offset which will influence the viability of the tilting process
 

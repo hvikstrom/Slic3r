@@ -16,6 +16,8 @@ use base 'Wx::Dialog';
 sub new {
     my $class = shift;
     my ($parent, %params) = @_;
+    use Data::Dumper;
+    print Dumper($class);
     my $self = $class->SUPER::new($parent, -1, $params{object}->name, wxDefaultPosition, [500,500], wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
     $self->{model_object_idx} = $params{model_object_idx};
     $self->{model_object} = $params{model_object};

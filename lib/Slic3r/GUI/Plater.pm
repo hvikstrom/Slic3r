@@ -2120,7 +2120,10 @@ sub start_tilt_process {
         _preset => $self->{tilt_preset},
     ); 
 
-    my ($result_model, $view_model) = $self->{bed_tilt}->process_bed_tilt;
+    my $dlg_tilt = Slic3r::GUI::Tilt3DConsole->new($self);
+    
+    my ($result_model, $view_model) = $self->{bed_tilt}->start_process($dlg_tilt);
+    return 1;
 
     if (!$result_model){
         $self->statusbar->SetStatusText("Error during the tilting process");
@@ -2947,12 +2950,13 @@ sub object_list_changed {
     my $have_objects = @{$self->{objects}} ? 1 : 0;
     my $method = $have_objects ? 'Enable' : 'Disable';
     $self->{"btn_$_"}->$method
-        for grep $self->{"btn_$_"}, qw(reset arrange export_gcode export_stl print send_gcode);
+        for grep $self->{"btn_$_"}, qw(reset arrange export_tilt_gcode export_gcode export_stl print send_gcode);
     
     if ($self->{export_gcode_output_file} || $self->{send_gcode_file}) {
         $self->{btn_export_gcode}->Disable;
         $self->{btn_print}->Disable;
         $self->{btn_send_gcode}->Disable;
+        $self->{btn_export_tilt_gcode}->Disable;
     }
     
     if ($self->{htoolbar}) {

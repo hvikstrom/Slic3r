@@ -25,6 +25,7 @@ use Slic3r::Geometry qw(X Y);
 use Slic3r::GUI::2DBed;
 use Slic3r::GUI::AboutDialog;
 use Slic3r::GUI::BedShapeDialog;
+use Slic3r::GUI::Tilt3DConsole;
 use Slic3r::GUI::BonjourBrowser;
 use Slic3r::GUI::ConfigWizard;
 use Slic3r::GUI::Controller;
@@ -122,7 +123,7 @@ sub OnInit {
     
     $self->{notifier} = Slic3r::GUI::Notifier->new;
     $self->{presets} = { print => [], filament => [], printer => [] };
-    
+    # my $test = Slic3r::GUI::Tilt3DConsole->new;
     # locate or create data directory
     # Unix: ~/.Slic3r
     # Windows: "C:\Users\username\AppData\Roaming\Slic3r" or "C:\Documents and Settings\username\Application Data\Slic3r"
