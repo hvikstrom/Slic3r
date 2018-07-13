@@ -2123,7 +2123,6 @@ sub start_tilt_process {
     my $dlg_tilt = Slic3r::GUI::Tilt3DConsole->new($self);
     
     my ($result_model, $view_model) = $self->{bed_tilt}->start_process($dlg_tilt);
-    return 1;
 
     if (!$result_model){
         $self->statusbar->SetStatusText("Error during the tilting process");
@@ -2161,9 +2160,6 @@ sub start_tilt_process {
     $config->validate;
 
     $self->{tilt_print}->apply_config($config);
-
-    # print "CONFIG PRINT TILT\n";
-    # print Dumper($self->{tilt_print}->config->get('print_tilt'));
 
     $self->{tilt3D}->update;
 
@@ -2855,6 +2851,7 @@ sub object_cut_dialog {
 	return unless $dlg->ShowModal == wxID_OK;
 
     if ($dlg->tilt_cut){
+        $self->{model} = $temp_model;
         $self->{tilt_preset} = $dlg->tilt_data;
         print "AFTER CUT DIALOG\n";
         $bb_mod = $self->{model}->objects->[$obj_idx]->bounding_box;

@@ -45,7 +45,6 @@ sub clean_values {
 
 sub start_process {
     my ($self, $dlg) = @_;
-    #my $frame = Slic3r::GUI::Tilt3DConsole->OnInit($self, $parent);
     print "PROCESS\n";
     $self->{dlg} = $dlg;
     $self->process_bed_tilt;
@@ -58,6 +57,9 @@ sub process_bed_tilt {
 
     $self->clean_values;
 
+    $self->{dlg}->appendConsole(":-----------------------------------------------------------------------------------------------");
+    $self->{dlg}->appendBoldConsole($self->className, "Starting process_bed_tilt");
+
     $retry //= 0;
     if ($retry > 2){
         print "Too many retry\n";
@@ -69,6 +71,13 @@ sub process_bed_tilt {
     $ORIGIN_OFFSET = $self->{config}->get('origin_offset');
     $BED_DIM = $self->{config}->get('bed_total_dim');
     $OBJECT_POS = $self->{config}->get('stl_initial_position');
+
+    $self->{dlg}->appendConsole($self->className, "Current object position");
+
+
+    my @pos = ($OBJECT_POS->x, $OBJECT_POS->y);
+    my @pos_label = ('X', 'Y');
+    $self->{dlg}->appendData(\@pos_label, \@pos);
 
 
     $BED_LENGTH = $BED_DIM->x;
@@ -87,8 +96,6 @@ sub process_bed_tilt {
     my $original_model_object = $model->objects->[0];
 
     my $model_offset = Slic3r::Pointf->new($ORIGIN_OFFSET->x, $ORIGIN_OFFSET->y);
-    my $dumper_x = $ORIGIN_OFFSET->x;
-    $self->{dlg}->appendConsole("Setting offsets to X: $dumper_x");
 
     #Set the offset which will influence the viability of the tilting process
 
@@ -120,18 +127,22 @@ sub process_bed_tilt {
         $print->apply_config($config);
         $print->validate;
         Slic3r::debugf "apply config ok\n";
+        $self->{dlg}->appendConsole($self->className, "Config OK");
     };
 
     if ($self->_preset){
-        print "PRESET FOUND\n";
         print Dumper($self->_preset);
+        $self->{dlg}->appendConsole($self->className, "Preset found");
         %preset = %{$self->_preset};
+        $self->{dlg}->appendPreset($self->_preset);
     }
     else {
-        print "No preset found\n";
+        $self->{dlg}->appendConsole($self->className, "No preset found");
+        $self->{dlg}->appendConsole($self->className, "Starting tilt_process to determine preset automatically");
         #Start tilt process with the original model
-        %preset = %{$print->tilt_process};
+        %preset = %{$print->tilt_process($self->{dlg})};
         if ($preset{'cut'} == 0){
+            $self->{dlg}->appendConsole($self->className, "No overhang detected, no need for tilt");
             return 0;
         }
     }
@@ -146,6 +157,8 @@ sub process_bed_tilt {
         print Dumper($view_model->objects, $model->objects);
         #Should contain (TILT_LEVEL, ANGLEXZ, ANGLEYZ, ANGLEZX, ANGLEZY)
         print "RESULT PLATER %preset\n";
+
+        $self->{dlg}->appendConsole($self->className, "Iteration n $iter_result");
 
         #Index of last objects in both view_model and model
         my $last_id = scalar @{$model->objects} - 1;
@@ -175,6 +188,7 @@ sub process_bed_tilt {
         $random_model->add_model_object($current_model_object);
 
         #Translate to compensate the offset center of rotation / bed surface
+        $self->{dlg}->appendConsole($self->className, "Z translation to compensate height offset");
         my $z_translation = Slic3r::Pointf3->new(0,0,-$ORIGIN_OFFSET->z);
         $current_model_object->translate(@$z_translation);
 
@@ -188,8 +202,10 @@ sub process_bed_tilt {
         #$tilt_cut = abs(abs($tilt_cut) - abs($bb_mod->z_min));
 
         #Rotate the object
+        $self->{dlg}->appendConsole($self->className, "Rotate the object");
         print "ROTATION YZ $angleyz -$anglezy ZX $anglezx -$anglexz\n";
         $current_model_object->rotate3D($angleyz - $anglezy, $anglezx - $anglexz, 0, 0);
+
 
         $bb_mod = $current_model_object->bounding_box;
 
@@ -200,23 +216,16 @@ sub process_bed_tilt {
         
 
         #Check that the new dimensions are still within the printer build space
-        my @offsets = $self->check_viability(\@angles, $bb_mod, $tilt_cut);
-        if (scalar @offsets == 1){
-            print "Impossible tilt\n";
-            $self->clean_values;
+        my $viability_result = $self->check_viability(\@angles, $bb_mod, $tilt_cut);
+        if (!$viability_result) {
             return 0;
         }
-        else {
-            my ($xz_offset, $yz_offset, $zx_offset, $zy_offset) = @offsets;
-
-            if (any { $_ != 0 } @offsets){
-                $retry += 1;
-                $OBJECT_POS = $self->_config->get('stl_initial_position');
-                my $new_object_pos = Slic3r::Pointf3->new($OBJECT_POS->x + $xz_offset + $zx_offset, $OBJECT_POS->y + $yz_offset + $zy_offset, $OBJECT_POS->z);
-                $self->_config->set('stl_initial_position', $new_object_pos);
-                return $self->process_bed_tilt;
-            }
+        elsif ($viability_result == 2){
+            $retry += 1;
+            $self->{dlg}->appendConsole($self->className, "Object has to be moved");
+            return $self->process_bed_tilt;
         }
+
 
         $tilt_cut += $bb_mod->z_min;
 
@@ -237,16 +246,15 @@ sub process_bed_tilt {
         my @levels = ($u_level, $z_level, $v_level);
 
         #Check that the levels are achievable        
-        @offsets = $self->check_levels(\@levels, \@angles);
-        if (any {$_ != 0} @offsets){
+        my $result_levels = $self->check_levels(\@levels, \@angles);
+        if (!$result_levels){
             $retry += 1;
-            $OBJECT_POS = $self->_config->get('stl_initial_position');
-            my $new_object_pos = Slic3r::Pointf3->new($OBJECT_POS->x + $offsets[0], $OBJECT_POS->y + $offsets[1], $OBJECT_POS->z);
-            $self->_config->set('stl_initial_position', $new_object_pos);
+            $self->{dlg}->appendConsole($self->className, "Object has to be moved");
             return $self->process_bed_tilt;
         }
 
         #Cut the object while rotated
+        $self->{dlg}->appendConsole($self->className, "Cut the object");
         my $new_model = $current_model_object->cut(Z, $tilt_cut);
 
         my ($upper_object, $lower_object) = @{$new_model->objects};
@@ -277,6 +285,7 @@ sub process_bed_tilt {
         if (($iter_result + 1) < 1){
             $print->clear_objects;
             $print->add_model_object($model->objects->[$last_id + 1]);
+            $self->{dlg}->appendConsole($self->className, "Computing tilt_process of next object");
             %preset = %{$print->tilt_process};
         }
 
@@ -447,10 +456,16 @@ sub process_bed_tilt {
     return ($model, $view_model);
 }
 
+sub className {
+    return "BedTilting";
+}
+
 
 #Properly add lower_object and upper_object in the model instance to produce the correct G-Code
 sub model_treat {
     my ($self, $last_id, $angles_ref, $levels_ref, $lower_object, $upper_object, $tilt_cut) = @_;
+
+    $self->{dlg}->appendConsole($self->className, "Treat object to produce correct GCODE");
 
     my ($anglexz, $angleyz, $anglezx, $anglezy) = @{$angles_ref};
     my @levels = @{$levels_ref};
@@ -505,6 +520,7 @@ sub model_treat {
 sub viewmodel_treat {
     my ($self, $last_view_id, $lower_object, $upper_object, $angles_ref) = @_;
 
+    $self->{dlg}->appendConsole($self->className, "Treat object to display them in the GUI");
 
     #Delete the last object if it contains more than one model
     $view_model->delete_object($last_view_id) if $last_view_id > 0;
@@ -570,6 +586,8 @@ sub validate_dimensions {
 sub compute_tilts {
     my ($self, $levels_ref) = @_;
 
+    $self->{dlg}->appendConsole($self->className, "Compute U, V, Z offsets produced by the bed tilt");
+
     my @levels = @{$levels_ref};
 
     my @cmd = qw(python nonlinear-solver.py);
@@ -590,8 +608,14 @@ sub compute_tilts {
     $max_angle = 47;
     #$max_angle = 46 if ($STRENGHT_TEST);
 
+    $self->{dlg}->appendTestName($self->className, "Testing tilt offsets");
+
     my @max_tilt = (abs($tilt_ux), abs($tilt_uy), abs($tilt_vx), abs($tilt_vy), abs($tilt_zy));
+    my @tilt_label = ('UX', 'UY', 'VX', 'VY', 'ZY');
+    
     if (any {$_ > $max_angle} @max_tilt){
+        $self->{dlg}->appendTestResult(0);
+        $self->{dlg}->appendData(\@tilt_label, \@max_tilt);
         print Dumper($BED_LENGTH, $BED_WIDTH);
         print Dumper(@out);
         print "ERROR ANGLE\n";
@@ -599,6 +623,7 @@ sub compute_tilts {
         return 0;
     }
 
+    $self->{dlg}->appendTestResult(1);
     my $tilt_offset = Slic3r::Pointf3->new($tilt_ux, $tilt_uy, 0);
     return $tilt_offset;
 }
@@ -618,6 +643,8 @@ sub print_dumper {
 sub check_viability {
     my ($self, $angles_ref, $bb_mod, $tilt_cut) = @_;
 
+    $self->{dlg}->appendTestName($self->className, "Check that the rotated object is still within the bed dimension");
+
     my ($anglexz, $angleyz, $anglezx, $anglezy) = @{$angles_ref};
 
     my $zy_offset = 0;
@@ -625,7 +652,12 @@ sub check_viability {
     my $yz_offset = 0;
     my $xz_offset = 0;
 
-    return (0) if ((abs($bb_mod->z_max - $bb_mod->z_min)) > $BED_HEIGHT);
+
+    if ((abs($bb_mod->z_max - $bb_mod->z_min)) > $BED_HEIGHT){
+        $self->{dlg}->appendTestResult(0);
+        $self->clean_values;
+        return 0;
+    }
 
     my $bb_min = $bb_mod->z_min;
 
@@ -654,9 +686,22 @@ sub check_viability {
         print "change x pos by $xz_offset\n";
     }
 
+    my @offsets = ($xz_offset, $yz_offset, $zx_offset, $zy_offset);
+    my @offsets_label = ('XZ', 'YZ', 'ZX', 'ZY');
+
+    if (any { $_ != 0 } @offsets){
+        $self->{dlg}->appendTestResult(0);
+        $self->{dlg}->appendData(\@offsets_label, \@offsets);
+        $OBJECT_POS = $self->_config->get('stl_initial_position');
+        my $new_object_pos = Slic3r::Pointf3->new($OBJECT_POS->x + $xz_offset + $zx_offset, $OBJECT_POS->y + $yz_offset + $zy_offset, $OBJECT_POS->z);
+        $self->_config->set('stl_initial_position', $new_object_pos);
+        return 2;
+    }
+
     print "VIABILITY FINISHED\n";
 
-    return ($xz_offset, $yz_offset, $zx_offset, $zy_offset);
+    $self->{dlg}->appendTestResult(1);
+    return 1;
 }
 
 sub check_levels {
@@ -664,6 +709,7 @@ sub check_levels {
 
     my ($anglexz, $angleyz, $anglezx, $anglezy) = @{$angles_ref};
 
+    $self->{dlg}->appendTestName($self->className, "Check levels of U, V and Z");
 
     my ($u_level, $z_level, $v_level) = @{$levels_ref};
 
@@ -689,7 +735,25 @@ sub check_levels {
         $xz_offset = (-$u_level + 0.5) / sin(-$anglezx);
         print "change x pos by $xz_offset\n";
     }
-    return ($xz_offset, $yz_offset);
+
+    my @offsets = ($xz_offset, $yz_offset);
+    my @offsets_label = ('X offset', 'Y offset');
+
+    my @levels_label = ('U', 'Z', 'V');
+
+    if (any {$_ != 0} @offsets){
+        $self->{dlg}->appendTestResult(0);
+        $self->{dlg}->appendData(\@levels_label, $levels_ref);
+
+        $self->{dlg}->appendSolution($self->className, "Move object", \@offsets_label, \@offsets);
+
+        $OBJECT_POS = $self->_config->get('stl_initial_position');
+        my $new_object_pos = Slic3r::Pointf3->new($OBJECT_POS->x + $offsets[0], $OBJECT_POS->y + $offsets[1], $OBJECT_POS->z);
+        $self->_config->set('stl_initial_position', $new_object_pos);
+        return 0;
+    }
+    $self->{dlg}->appendTestResult(1);
+    return 1;
 }
 
 sub rotate3D_z {
@@ -705,6 +769,8 @@ sub support_levels {
     my ($self, $tilt_level, $angles_ref) = @_;
     
     my ($anglexz, $angleyz, $anglezx, $anglezy) = @{$angles_ref};
+
+    $self->{dlg}->appendConsole($self->className, "Compute levels of U, V and Z");
 
     #Can only manage one angle at a time
 
@@ -728,6 +794,9 @@ sub support_levels {
 
 sub add_print {
     my ($self, $object, $index) = @_;
+
+    $self->{dlg}->appendConsole($self->className, "Set object config properly");
+
     my $config_object = $object->config;
     if (!$STRENGHT_TEST){
         if ($index == 0){

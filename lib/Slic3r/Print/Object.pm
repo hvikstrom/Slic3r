@@ -280,8 +280,8 @@ sub tilt {
     my ($tilt, $layerm, $contact, $overhang) = $support_material->contact_area($self, tilt => 1);
     # use Data::Dumper;
     # print Dumper($tilt, $layerm, $contact, $overhang);
-    # print Dumper($overhang->wkt) if (defined $overhang);
-    # print Dumper($contact->wkt) if (defined $contact);
+     print Dumper($overhang->wkt) if (defined $overhang);
+    #print Dumper($contact->wkt) if (defined $contact);
 
     if ($tilt == 1) {
         my $layer = $layerm->layer;

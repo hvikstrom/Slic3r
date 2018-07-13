@@ -39,17 +39,22 @@ sub size {
     return $self->bounding_box->size;
 }
 
+sub className {
+    return "Print";
+}
+
 sub tilt_process {
-    my ($self) = @_;
+    my ($self, $dlg) = @_;
+    $dlg->appendConsole($self->className, "From tilt_process");
     my $last_id = scalar @{$self->objects} - 1;
     my $last_object = $self->objects->[$last_id];
 
     $last_object->infill;
-    return $self->_tilt_process($last_object);
+    return $self->_tilt_process($last_object, $dlg);
 }
 
 sub _tilt_process {
-    my ($self, $object) = @_;
+    my ($self, $object, $dlg) = @_;
     use Data::Dumper;
     my ($tilt_height, $anglexz, $angleyz, $anglezx, $anglezy) = $object->tilt;
     print "HEIGHT $tilt_height\n";
@@ -63,6 +68,9 @@ sub _tilt_process {
             ZY  => $anglezy,
         },
     };
+
+    $dlg->appendConsole($self->className, "Preset found");
+    $dlg->appendPreset($hashdata);
     print Dumper($hashdata);
     if ($hashdata->{'cut'}) {
         return $hashdata;
